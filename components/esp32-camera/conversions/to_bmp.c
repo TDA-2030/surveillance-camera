@@ -114,7 +114,7 @@ static uint32_t _jpg_read(void * arg, size_t index, uint8_t *buf, size_t len)
     return len;
 }
 
-static bool jpg2rgb888(const uint8_t *src, size_t src_len, uint8_t * out, jpg_scale_t scale)
+bool jpg2rgb888(const uint8_t *src, size_t src_len, uint8_t * out, jpg_scale_t scale)
 {
     rgb_jpg_decoder jpeg;
     jpeg.width = 0;
