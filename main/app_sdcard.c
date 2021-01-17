@@ -25,7 +25,7 @@ static const char *TAG = "sd_card";
 // By default, SDMMC peripheral is used.
 // To enable SPI mode, uncomment the following line:
 
-// #define USE_SPI_MODE
+#define USE_SPI_MODE
 
 // When testing SD and SPI modes, keep in mind that once the card has been
 // initialized in SPI mode, it can not be reinitialized in SD mode without
