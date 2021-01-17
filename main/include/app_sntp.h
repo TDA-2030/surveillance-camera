@@ -28,7 +28,7 @@
 extern "C" {
 #endif
 
-void app_sntp_initialize(void);
+void app_sntp_start(void);
 void app_sntp_get_time(struct tm *timeinfo);
 
 
