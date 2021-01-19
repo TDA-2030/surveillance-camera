@@ -39,13 +39,8 @@
 #include "app_led.h"
 #include "app_sdcard.h"
 #include "screen_driver.h"
+#include "file_manage.h"
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <dirent.h>
-#include <unistd.h>
-#include <errno.h>
 
 static const char *TAG = "app_main";
 
@@ -64,27 +59,6 @@ SysStatus_t SystemStatus = 0;
 static scr_driver_fun_t lcd;
 static scr_info_t lcd_info;
 
-
-static int do_mkdir(const char *path, mode_t mode)
-{
-  struct stat st;
-  int status = 0;
-
-  if (stat(path, &st) != 0) {
-    /* Directory does not exist. EEXIST for race condition */
-    ESP_LOGI(TAG, "Create dir [%s]", path);
-    if (mkdir(path, mode) != 0 && errno != EEXIST) {
-      status = -1;
-      ESP_LOGE(TAG, "Create dir [%s] failed", path);
-    }
-  } else if (!S_ISDIR(st.st_mode)) {
-    errno = ENOTDIR;
-    status = -1;
-    ESP_LOGE(TAG, "Exist [%s] but not dir", path);
-  }
-
-  return status;
-}
 
 static esp_err_t image_save(uint8_t *pdata, uint32_t length, const char *path)
 {
@@ -357,7 +331,7 @@ void app_main()
 
     led_init();
     app_sdcard_init();
-    do_mkdir("/sdcard/picture", 0755);
+    fm_mkdir("/sdcard/picture");
     lcd_init();
     
     bool is_configured;
