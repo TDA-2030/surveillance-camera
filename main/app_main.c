@@ -37,9 +37,10 @@
 #include "app_httpd.h"
 #include "esp_camera.h"
 #include "app_led.h"
-#include "app_sdcard.h"
 #include "screen_driver.h"
 #include "file_manage.h"
+#include "avi_recorder.h"
+#include "file_server.h"
 
 
 static const char *TAG = "app_main";
@@ -153,10 +154,10 @@ static void camera_task(void *arg)
     uint8_t image_cnt = 0;
     camera_fb_t *image_fb = NULL;
 
-    app_camera_init();
+    
     int res = 0;
     sensor_t *s = esp_camera_sensor_get();
-    res = s->set_framesize(s, FRAMESIZE_HQVGA);
+    res = s->set_framesize(s, FRAMESIZE_HVGA);
     // res |= s->set_vflip(s, true);
     // res |= s->set_hmirror(s, true);
     if (res)
@@ -164,8 +165,8 @@ static void camera_task(void *arg)
         ESP_LOGE(TAG, "Camera set_framesize failed");
     }
 
-    uint16_t img_width = resolution[FRAMESIZE_HQVGA].width;
-    uint16_t img_height = resolution[FRAMESIZE_HQVGA].height;
+    uint16_t img_width = resolution[FRAMESIZE_HVGA].width;
+    uint16_t img_height = resolution[FRAMESIZE_HVGA].height;
     uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*3, MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
     if (NULL == img_rgb888)
     {
@@ -330,9 +331,12 @@ void app_main()
     ESP_ERROR_CHECK(ret);
 
     led_init();
-    app_sdcard_init();
+    app_camera_init();
+    // app_sdcard_init();
+    ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     fm_mkdir("/sdcard/picture");
-    lcd_init();
+
+    // lcd_init();
     
     bool is_configured;
     captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
@@ -345,14 +349,20 @@ void app_main()
     captive_portal_wait(portMAX_DELAY);
     SYS_STATUS_SET(SYS_STATUS_CONNECTED);
     app_sntp_start();
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
-    xTaskCreate(camera_task,
-                "camera_task",
-                4096,
-                NULL,
-                7,
-                &task_handle_camera
-               );
+    start_file_server();
+
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60);
+
+    // xTaskCreate(camera_task,
+    //             "camera_task",
+    //             4096,
+    //             NULL,
+    //             7,
+    //             &task_handle_camera
+    //            );
     xTaskCreate(misc_task,
                 "misc_task",
                 4096,

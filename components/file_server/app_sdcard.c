@@ -17,15 +17,13 @@
 #include "driver/sdspi_host.h"
 #include "sdmmc_cmd.h"
 
-#include "app_sdcard.h"
-
 static const char *TAG = "sd_card";
 
 // This example can use SDMMC and SPI peripherals to communicate with SD card.
 // By default, SDMMC peripheral is used.
 // To enable SPI mode, uncomment the following line:
 
-#define USE_SPI_MODE
+// #define USE_SPI_MODE
 
 // When testing SD and SPI modes, keep in mind that once the card has been
 // initialized in SPI mode, it can not be reinitialized in SD mode without
@@ -82,7 +80,7 @@ esp_err_t app_sdcard_init(void)
     // If format_if_mount_failed is set to true, SD card will be partitioned and
     // formatted in case when mounting fails.
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = false,
+        .format_if_mount_failed = true,
         .max_files = 5,
         .allocation_unit_size = 16 * 1024
     };
@@ -108,50 +106,4 @@ esp_err_t app_sdcard_init(void)
     // Card has been initialized, print its properties
     sdmmc_card_print_info(stdout, card);
     return ESP_OK;
-    // // Use POSIX and C standard library functions to work with files.
-    // // First create a file.
-    // ESP_LOGI(TAG, "Opening file");
-    // FILE* f = fopen("/sdcard/hello.txt", "w");
-    // if (f == NULL) {
-    //     ESP_LOGE(TAG, "Failed to open file for writing");
-    //     return;
-    // }
-    // fprintf(f, "Hello %s!\n", card->cid.name);
-    // fclose(f);
-    // ESP_LOGI(TAG, "File written");
-
-    // // Check if destination file exists before renaming
-    // struct stat st;
-    // if (stat("/sdcard/foo.txt", &st) == 0) {
-    //     // Delete it if it exists
-    //     unlink("/sdcard/foo.txt");
-    // }
-
-    // // Rename original file
-    // ESP_LOGI(TAG, "Renaming file");
-    // if (rename("/sdcard/hello.txt", "/sdcard/foo.txt") != 0) {
-    //     ESP_LOGE(TAG, "Rename failed");
-    //     return;
-    // }
-
-    // // Open renamed file for reading
-    // ESP_LOGI(TAG, "Reading file");
-    // f = fopen("/sdcard/foo.txt", "r");
-    // if (f == NULL) {
-    //     ESP_LOGE(TAG, "Failed to open file for reading");
-    //     return;
-    // }
-    // char line[64];
-    // fgets(line, sizeof(line), f);
-    // fclose(f);
-    // // strip newline
-    // char* pos = strchr(line, '\n');
-    // if (pos) {
-    //     *pos = '\0';
-    // }
-    // ESP_LOGI(TAG, "Read from file: '%s'", line);
-
-    // // All done, unmount partition and disable SDMMC or SPI peripheral
-    // esp_vfs_fat_sdmmc_unmount();
-    // ESP_LOGI(TAG, "Card unmounted");
 }

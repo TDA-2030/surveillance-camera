@@ -15,13 +15,17 @@
 
 static const char *TAG = "file manage";
 
-#define USE_SPIFFS
+// #define USE_SPIFFS
+#define USE_FATFS 
+#define USE_SDCARD 1
 
 static fs_info_t g_fs_info = {0};
 
 #ifdef USE_FATFS
 static wl_handle_t g_wl_handle = WL_INVALID_HANDLE;
 #endif
+
+esp_err_t app_sdcard_init(void);
 
 static void TraverseDir(char *direntName, int level, int indent)
 {
@@ -144,12 +148,13 @@ void PrintDirentStruct(char *direntName, int level)
     printf("\r\n");
 }
 
+
 static esp_err_t init_filesystem(void)
 {
     esp_err_t ret;
 
 #ifdef USE_SPIFFS
-    g_fs_info.base_path = "/spiffs";
+    g_fs_info.base_path = "/sdcard";
     g_fs_info.label = "storage";
     ESP_LOGI(TAG, "Initializing SPIFFS");
 
@@ -186,13 +191,17 @@ static esp_err_t init_filesystem(void)
         ESP_LOGE(TAG, "Failed to get SPIFFS partition information (%s)", esp_err_to_name(ret));
         return ESP_FAIL;
     }
-
-    ESP_LOGI(TAG, "Partition size: total: %d, used: %d", total, used);
+    
+    ESP_LOGI(TAG, "base_path:%s, Partition size: total: %d, used: %d", g_fs_info.base_path, total, used);
 
 #elif defined USE_FATFS
 
-    g_fs_info.base_path = "/fatfs";
-    g_fs_info.label = "audio";
+#if USE_SDCARD
+    g_fs_info.base_path = "/sdcard";
+    app_sdcard_init();
+#else
+    g_fs_info.base_path = "/sdcard";
+    g_fs_info.label = "storage";
 
     esp_vfs_fat_mount_config_t mount_config = {
         .max_files = 5,
@@ -211,7 +220,7 @@ static esp_err_t init_filesystem(void)
     // esp_vfs_fat_usage(g_fs_info.base_path, &bytes_total, &bytes_free);
 
     // ESP_LOGI(TAG, "FATFS: %d kB total, %d kB free", bytes_total / 1024, bytes_free / 1024);
-
+#endif
 #endif
 
     return ESP_OK;
@@ -242,7 +251,6 @@ esp_err_t fm_get_info(fs_info_t **info)
     ESP_LOGW(TAG, "filesystem not initilaze");
     return ESP_ERR_NOT_FOUND;
 }
-
 
 esp_err_t fm_file_table_create(char ***list_out, uint16_t *files_number)
 {
@@ -314,6 +322,7 @@ esp_err_t fm_file_table_free(char ***list, uint16_t files_number)
     return ESP_OK;
 }
 
+
 int fm_mkdir(const char *path)
 {
   struct stat st;
@@ -322,7 +331,7 @@ int fm_mkdir(const char *path)
   if (stat(path, &st) != 0) {
     /* Directory does not exist. EEXIST for race condition */
     ESP_LOGI(TAG, "Create dir [%s]", path);
-    if (mkdir(path, 755) != 0 && errno != EEXIST) {
+    if (mkdir(path, 0755) != 0 && errno != EEXIST) {
       status = -1;
       ESP_LOGE(TAG, "Create dir [%s] failed", path);
     }
