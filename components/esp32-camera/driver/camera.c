@@ -353,7 +353,7 @@ static void dma_desc_deinit()
     free(s_state->dma_desc);
 }
 
-static inline void IRAM_ATTR i2s_conf_reset()
+static inline void i2s_conf_reset()
 {
     const uint32_t lc_conf_reset_flags = I2S_IN_RST_M | I2S_AHBM_RST_M
                                          | I2S_AHBM_FIFO_RST_M;
@@ -534,7 +534,7 @@ static void IRAM_ATTR i2s_stop(bool* need_yield)
     }
 }
 
-static void IRAM_ATTR signal_dma_buf_received(bool* need_yield)
+static void signal_dma_buf_received(bool* need_yield)
 {
     size_t dma_desc_filled = s_state->dma_desc_cur;
     s_state->dma_desc_cur = (dma_desc_filled + 1) % s_state->dma_desc_count;
@@ -603,7 +603,7 @@ static void IRAM_ATTR vsync_isr(void* arg)
     }
 }
 
-static void IRAM_ATTR camera_fb_done()
+static void camera_fb_done()
 {
     camera_fb_int_t * fb = NULL, * fb2 = NULL;
     BaseType_t taskAwoken = 0;
@@ -663,7 +663,7 @@ static void IRAM_ATTR camera_fb_done()
     }
 }
 
-static void IRAM_ATTR dma_finish_frame()
+static void dma_finish_frame()
 {
     size_t buf_len = s_state->width * s_state->fb_bytes_per_pixel / s_state->dma_per_line;
 
@@ -713,7 +713,7 @@ static void IRAM_ATTR dma_finish_frame()
     s_state->dma_filtered_count = 0;
 }
 
-static void IRAM_ATTR dma_filter_buffer(size_t buf_idx)
+static void dma_filter_buffer(size_t buf_idx)
 {
     //no need to process the data if frame is in use or is bad
     if(s_state->fb->ref || s_state->fb->bad) {
@@ -755,7 +755,7 @@ static void IRAM_ATTR dma_filter_buffer(size_t buf_idx)
     s_state->dma_filtered_count++;
 }
 
-static void IRAM_ATTR dma_filter_task(void *pvParameters)
+static void dma_filter_task(void *pvParameters)
 {
     s_state->dma_filtered_count = 0;
     while (true) {
@@ -771,7 +771,7 @@ static void IRAM_ATTR dma_filter_task(void *pvParameters)
     }
 }
 
-static void IRAM_ATTR dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+static void dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
     // manually unrolling 4 iterations of the loop here
@@ -785,7 +785,7 @@ static void IRAM_ATTR dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc,
     }
 }
 
-static void IRAM_ATTR dma_filter_grayscale(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+static void dma_filter_grayscale(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
     for (size_t i = 0; i < end; ++i) {
@@ -799,7 +799,7 @@ static void IRAM_ATTR dma_filter_grayscale(const dma_elem_t* src, lldesc_t* dma_
     }
 }
 
-static void IRAM_ATTR dma_filter_grayscale_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+static void dma_filter_grayscale_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 8;
     for (size_t i = 0; i < end; ++i) {
@@ -818,7 +818,7 @@ static void IRAM_ATTR dma_filter_grayscale_highspeed(const dma_elem_t* src, llde
     }
 }
 
-static void IRAM_ATTR dma_filter_yuyv(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+static void dma_filter_yuyv(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
     for (size_t i = 0; i < end; ++i) {
@@ -836,7 +836,7 @@ static void IRAM_ATTR dma_filter_yuyv(const dma_elem_t* src, lldesc_t* dma_desc,
     }
 }
 
-static void IRAM_ATTR dma_filter_yuyv_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+static void dma_filter_yuyv_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 8;
     for (size_t i = 0; i < end; ++i) {
@@ -860,7 +860,7 @@ static void IRAM_ATTR dma_filter_yuyv_highspeed(const dma_elem_t* src, lldesc_t*
     }
 }
 
-static void IRAM_ATTR dma_filter_rgb888(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
+static void dma_filter_rgb888(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
 {
     size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
     uint8_t lb, hb;

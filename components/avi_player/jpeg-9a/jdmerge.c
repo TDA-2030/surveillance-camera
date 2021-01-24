@@ -37,7 +37,7 @@
 #include "jinclude.h"
 #include "jpeglib.h"
 
-#include "./Bsp/lcd/bsp_lcd.h"
+// #include "./Bsp/lcd/bsp_lcd.h"
 
 #ifdef UPSAMPLE_MERGING_SUPPORTED
 

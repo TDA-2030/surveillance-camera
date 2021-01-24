@@ -39,8 +39,9 @@
 #include "app_led.h"
 #include "screen_driver.h"
 #include "file_manage.h"
-#include "avi_recorder.h"
 #include "file_server.h"
+#include "avi_recorder.h"
+#include "vidoplayer.h"
 
 
 static const char *TAG = "app_main";
@@ -354,7 +355,8 @@ void app_main()
     start_file_server();
 
     vTaskDelay(pdMS_TO_TICKS(1000));
-    avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60);
+    avi_play("/sdcard/test.avi");
+    // avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60*1);
 
     // xTaskCreate(camera_task,
     //             "camera_task",

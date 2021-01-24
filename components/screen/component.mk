@@ -16,5 +16,6 @@ SCREEN_DIR = controller_driver/ili9341 \
             controller_driver/ssd1307 \
             controller_driver/ssd1322
 
-COMPONENT_ADD_INCLUDEDIRS := . iface_driver $(SCREEN_DIR)
-COMPONENT_SRCDIRS := . iface_driver $(SCREEN_DIR)
+COMPONENT_ADD_INCLUDEDIRS := . interface_driver $(SCREEN_DIR)
+COMPONENT_SRCDIRS := . interface_driver $(SCREEN_DIR)
+COMPONENT_PRIV_INCLUDEDIRS := priv_include

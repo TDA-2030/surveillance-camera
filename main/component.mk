@@ -8,3 +8,6 @@
 #
 COMPONENT_EMBED_FILES := www/index_ov2640.html.gz
 COMPONENT_EMBED_FILES += www/index_ov3660.html.gz
+
+COMPONENT_ADD_INCLUDEDIRS := .  include 
+COMPONENT_SRCDIRS := . 

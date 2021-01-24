@@ -5,8 +5,5 @@
 
 PROJECT_NAME := camera_web_server
 
-SOLUTION_PATH ?= $(abspath $(shell pwd))/../../..
-
-include $(SOLUTION_PATH)/components/component_conf.mk
 include $(IDF_PATH)/make/project.mk
 

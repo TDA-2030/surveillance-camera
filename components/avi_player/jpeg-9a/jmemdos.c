@@ -78,11 +78,11 @@ extern char * getenv JPP((const char * name));
 #endif
 
 #ifndef USE_MSDOS_MEMMGR	/* make sure user got configuration right */
-  You forgot to define USE_MSDOS_MEMMGR in jconfig.h. /* deliberate syntax error */
+  #error "You forgot to define USE_MSDOS_MEMMGR in jconfig.h." /* deliberate syntax error */
 #endif
 
 #if MAX_ALLOC_CHUNK >= 65535L	/* make sure jconfig.h got this right */
-  MAX_ALLOC_CHUNK should be less than 64K. /* deliberate syntax error */
+  #error "MAX_ALLOC_CHUNK should be less than 64K." /* deliberate syntax error */
 #endif
 
 
