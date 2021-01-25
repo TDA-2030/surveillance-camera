@@ -15,7 +15,7 @@
 #ifndef _IOT_SCREEN_DRIVER_H_
 #define _IOT_SCREEN_DRIVER_H_
 
-#include "scr_iface_driver.h"
+#include "scr_interface_driver.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -146,13 +146,15 @@ typedef enum {
  * 
  */
 typedef struct {
-    scr_iface_driver_fun_t *iface_drv;   /*!< Interface driver for screen */
+    scr_interface_driver_t *iface_drv;   /*!< Interface driver for screen */
     int8_t pin_num_rst;                  /*!< Pin to hardreset LCD*/
-    int8_t pin_num_bckl;                 /*!< Pin for adjusting Backlight- can use PWM/DAC too*/
+    int8_t pin_num_bckl;                 /*!< Pin for control backlight */
     uint8_t rst_active_level;            /*!< Reset pin active level */
-    uint8_t bckl_active_level;           /*!< Back-light active level */
+    uint8_t bckl_active_level;           /*!< Backlight active level */
     uint16_t width;                      /*!< Screen width */
     uint16_t height;                     /*!< Screen height */
+    uint16_t offset_hor;                 /*!< Offset of horizontal */
+    uint16_t offset_ver;                 /*!< Offset of vertical */
     scr_dir_t rotate;                    /*!< Screen rotate direction */
 } scr_controller_config_t;
 
@@ -270,7 +272,7 @@ typedef struct {
     *      - ESP_FAIL Failed
     */
     esp_err_t (*get_info)(scr_info_t *info);
-} scr_driver_fun_t;
+} scr_driver_t;
 
 /**
  * @brief Initialize a screen
@@ -285,7 +287,7 @@ typedef struct {
  *      - ESP_FAIL Initialize failed
  *      - ESP_ERR_NOT_FOUND: Screen controller was not found.
  */
-esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *lcd_conf, scr_driver_fun_t *out_screen);
+esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *lcd_conf, scr_driver_t *out_screen);
 
 /**
  * @brief Deinitialize a screen
@@ -297,7 +299,7 @@ esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *l
  *      - ESP_ERR_INVALID_ARG   Arguments is NULL.
  *      - ESP_FAIL Deinitialize failed
  */
-esp_err_t scr_deinit(const scr_driver_fun_t *screen);
+esp_err_t scr_deinit(const scr_driver_t *screen);
 
 #ifdef __cplusplus
 }

@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef _IFACE_DRV_DEF_H_
-#define _IFACE_DRV_DEF_H_
+#ifndef _INTERFACE_DRV_DEF_H_
+#define _INTERFACE_DRV_DEF_H_
 
 #ifdef __cplusplus
 extern "C" {

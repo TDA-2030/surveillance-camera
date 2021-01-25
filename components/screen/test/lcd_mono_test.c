@@ -23,7 +23,7 @@
 
 static const char *TAG = "mono lcd test";
 
-static scr_driver_fun_t lcd;
+static scr_driver_t lcd;
 static scr_info_t lcd_info;
 
 static const unsigned char bmp_image_128_64[];
@@ -67,14 +67,14 @@ TEST_CASE("Screen SSD1306 I2C test", "[screen][iot]")
     i2c_bus_handle_t i2c_bus = i2c_bus_create(I2C_NUM_0, &i2c_conf);
     TEST_ASSERT_NOT_NULL(i2c_bus);
 
-    iface_i2c_config_t iface_cfg = {
+    scr_interface_i2c_config_t iface_cfg = {
         .i2c_bus = i2c_bus,
         .clk_speed = 100000,
         .slave_addr = 0x3C,
     };
 
-    scr_iface_driver_fun_t *iface_drv;
-    TEST_ASSERT(ESP_OK == scr_iface_create(SCREEN_IFACE_I2C, &iface_cfg, &iface_drv));
+    scr_interface_driver_t *iface_drv;
+    TEST_ASSERT(ESP_OK == scr_interface_create(SCREEN_IFACE_I2C, &iface_cfg, &iface_drv));
     scr_controller_config_t lcd_cfg = {0};
     lcd_cfg.iface_drv = iface_drv,
     lcd_cfg.pin_num_rst = 0,
@@ -98,7 +98,7 @@ TEST_CASE("Screen SSD1306 I2C test", "[screen][iot]")
     contrast_test(lcd_ssd1306_set_contrast);
 
     scr_deinit(&lcd);
-    scr_iface_delete(iface_drv);
+    scr_interface_delete(iface_drv);
     i2c_bus_delete(&i2c_bus);
 }
 
@@ -115,14 +115,14 @@ TEST_CASE("Screen SSD1307 I2C test", "[screen][iot]")
     i2c_bus_handle_t i2c_bus = i2c_bus_create(I2C_NUM_0, &i2c_conf);
     TEST_ASSERT_NOT_NULL(i2c_bus);
 
-    iface_i2c_config_t iface_cfg = {
+    scr_interface_i2c_config_t iface_cfg = {
         .i2c_bus = i2c_bus,
         .clk_speed = 100000,
         .slave_addr = 0x3D,
     };
 
-    scr_iface_driver_fun_t *iface_drv;
-    TEST_ASSERT(ESP_OK == scr_iface_create(SCREEN_IFACE_I2C, &iface_cfg, &iface_drv));
+    scr_interface_driver_t *iface_drv;
+    TEST_ASSERT(ESP_OK == scr_interface_create(SCREEN_IFACE_I2C, &iface_cfg, &iface_drv));
     scr_controller_config_t lcd_cfg = {0};
     lcd_cfg.iface_drv = iface_drv,
     lcd_cfg.pin_num_rst = 0,
@@ -145,7 +145,7 @@ TEST_CASE("Screen SSD1307 I2C test", "[screen][iot]")
     contrast_test(lcd_ssd1307_set_contrast);
 
     scr_deinit(&lcd);
-    scr_iface_delete(iface_drv);
+    scr_interface_delete(iface_drv);
     i2c_bus_delete(&i2c_bus);
 }
 
@@ -160,7 +160,7 @@ TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
     spi_bus_handle_t spi_bus = spi_bus_create(2, &spi_cfg);
     TEST_ASSERT_NOT_NULL(spi_bus);
 
-    iface_spi_config_t spi_lcd_cfg = {
+    scr_interface_spi_config_t spi_lcd_cfg = {
         .spi_bus = spi_bus,
         .pin_num_cs = 41,
         .pin_num_dc = 35,
@@ -168,8 +168,8 @@ TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
         .swap_data = false,
     };
 
-    scr_iface_driver_fun_t *iface_drv;
-    TEST_ASSERT(ESP_OK == scr_iface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv));
+    scr_interface_driver_t *iface_drv;
+    TEST_ASSERT(ESP_OK == scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv));
 
     scr_controller_config_t lcd_cfg = {0};
     lcd_cfg.iface_drv = iface_drv,
@@ -213,7 +213,7 @@ TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
     heap_caps_free(pixels);
 
     scr_deinit(&lcd);
-    scr_iface_delete(iface_drv);
+    scr_interface_delete(iface_drv);
     spi_bus_delete(&spi_bus);
 }
 

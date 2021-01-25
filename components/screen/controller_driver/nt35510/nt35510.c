@@ -18,6 +18,7 @@
 #include "esp_log.h"
 #include "driver/gpio.h"
 #include "screen_driver.h"
+#include "screen_utility.h"
 #include "nt35510.h"
 
 static const char *TAG = "lcd nt35510";
@@ -29,6 +30,9 @@ static const char *TAG = "lcd nt35510";
 
 #define LCD_NAME "NT35510"
 #define LCD_BPP  16
+
+#define NT35510_RESOLUTION_HOR 480
+#define NT35510_RESOLUTION_VER 864
 
 #define NT35510_CASET   0x2A00
 #define NT35510_RASET   0x2B00
@@ -43,24 +47,15 @@ static const char *TAG = "lcd nt35510";
 #define MADCTL_RGB 0x08
 #define MADCTL_MH  0x04
 
-typedef struct {
-    scr_iface_driver_fun_t *iface_drv;
-    uint16_t original_width;
-    uint16_t original_height;
-    uint16_t width;
-    uint16_t height;
-    scr_dir_t dir;
-} nt35510_dev_t;
-
-static nt35510_dev_t g_lcd_handle;
+static scr_handle_t g_lcd_handle;
 
 /**
  * This header file is only used to redefine the function to facilitate the call.
  * It can only be placed in this position, not in the head of the file.
  */
-#include "iface_drv_def.h"
+#include "interface_drv_def.h"
 
-scr_driver_fun_t lcd_nt35510_default_driver = {
+scr_driver_t lcd_nt35510_default_driver = {
     .init = lcd_nt35510_init,
     .deinit = lcd_nt35510_deinit,
     .set_direction = lcd_nt35510_set_rotation,
@@ -76,6 +71,8 @@ static void lcd_nt35510_init_reg(void);
 
 esp_err_t lcd_nt35510_init(const scr_controller_config_t *lcd_conf)
 {
+    LCD_CHECK(lcd_conf->width <= NT35510_RESOLUTION_HOR, "Width greater than maximum", ESP_ERR_INVALID_ARG);
+    LCD_CHECK(lcd_conf->height <= NT35510_RESOLUTION_VER, "Height greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(NULL != lcd_conf, "config pointer invalid", ESP_ERR_INVALID_ARG);
     LCD_CHECK((NULL != lcd_conf->iface_drv->write_cmd && \
                NULL != lcd_conf->iface_drv->write_data && \
@@ -99,6 +96,8 @@ esp_err_t lcd_nt35510_init(const scr_controller_config_t *lcd_conf)
     g_lcd_handle.iface_drv = lcd_conf->iface_drv;
     g_lcd_handle.original_width = lcd_conf->width;
     g_lcd_handle.original_height = lcd_conf->height;
+    g_lcd_handle.offset_hor = lcd_conf->offset_hor;
+    g_lcd_handle.offset_ver = lcd_conf->offset_ver;
 
     lcd_nt35510_init_reg();
 
@@ -117,7 +116,7 @@ esp_err_t lcd_nt35510_init(const scr_controller_config_t *lcd_conf)
 
 esp_err_t lcd_nt35510_deinit(void)
 {
-    memset(&g_lcd_handle, 0, sizeof(nt35510_dev_t));
+    memset(&g_lcd_handle, 0, sizeof(scr_handle_t));
     return ESP_OK;
 }
 
@@ -197,6 +196,7 @@ esp_err_t lcd_nt35510_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t
     LCD_CHECK((x1 < g_lcd_handle.width) && (y1 < g_lcd_handle.height), "The set coordinates exceed the screen size", ESP_ERR_INVALID_ARG);
     LCD_CHECK((x0 <= x1) && (y0 <= y1), "Window coordinates invalid", ESP_ERR_INVALID_ARG);
     esp_err_t ret = ESP_OK;
+    scr_utility_apply_offset(&g_lcd_handle, NT35510_RESOLUTION_HOR, NT35510_RESOLUTION_VER, &x0, &y0, &x1, &y1);
 
     ret |= LCD_WRITE_REG(NT35510_CASET, x0 >> 8);
     ret |= LCD_WRITE_REG(NT35510_CASET + 1, x0 & 0xff);

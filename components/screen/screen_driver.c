@@ -29,43 +29,42 @@ static const char *TAG = "screen driver";
  */
 /**< Colorful screen */
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ILI9341
-extern scr_driver_fun_t lcd_ili9341_default_driver;
+extern scr_driver_t lcd_ili9341_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ILI9486
-extern scr_driver_fun_t lcd_ili9486_default_driver;
+extern scr_driver_t lcd_ili9486_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ILI9806
-extern scr_driver_fun_t lcd_ili9806_default_driver;
+extern scr_driver_t lcd_ili9806_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_NT35510
-extern scr_driver_fun_t lcd_nt35510_default_driver;
+extern scr_driver_t lcd_nt35510_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_RM68120
-extern scr_driver_fun_t lcd_rm68120_default_driver;
+extern scr_driver_t lcd_rm68120_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1351
-extern scr_driver_fun_t lcd_ssd1351_default_driver;
+extern scr_driver_t lcd_ssd1351_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ST7789
-extern scr_driver_fun_t lcd_st7789_default_driver;
+extern scr_driver_t lcd_st7789_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_ST7796
-extern scr_driver_fun_t lcd_st7796_default_driver;
+extern scr_driver_t lcd_st7796_default_driver;
 #endif
 
 /**< Monochrome screen */
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1306
-extern scr_driver_fun_t lcd_ssd1306_default_driver;
+extern scr_driver_t lcd_ssd1306_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1307
-extern scr_driver_fun_t lcd_ssd1307_default_driver;
+extern scr_driver_t lcd_ssd1307_default_driver;
 #endif
 #ifdef CONFIG_LCD_DRIVER_SCREEN_CONTROLLER_SSD1322
-extern scr_driver_fun_t lcd_ssd1322_default_driver;
+extern scr_driver_t lcd_ssd1322_default_driver;
 #endif
 
-
-esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *lcd_conf, scr_driver_fun_t *out_screen)
+esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *lcd_conf, scr_driver_t *out_screen)
 {
     LCD_CHECK(NULL != lcd_conf, "Pointer of config is invalid", ESP_ERR_INVALID_ARG);
     LCD_CHECK(NULL != out_screen, "Pointer of screen is invalid", ESP_ERR_INVALID_ARG);
@@ -158,7 +157,7 @@ esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *l
     return ret;
 }
 
-esp_err_t scr_deinit(const scr_driver_fun_t *screen)
+esp_err_t scr_deinit(const scr_driver_t *screen)
 {
     LCD_CHECK(NULL != screen, "Pointer of screen is invalid", ESP_ERR_INVALID_ARG);
     esp_err_t ret;
