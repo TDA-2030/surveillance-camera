@@ -131,13 +131,8 @@ static int Strl_Parser(const uint8_t *buffer, uint32_t length, uint32_t *list_le
 
 int AVI_Parser(const uint8_t *buffer, uint32_t length)
 {
-    for (size_t i = 0; i < 100; i++)
-    {
-        printf("%x\n", buffer[i]);
-    }
-    
     const uint8_t *pdata = buffer;
-    AVI_LIST_HEAD *riff = (AVI_LIST_HEAD*)pdata;  printf("%x\n", riff->List); printf("%x\n", riff->FourCC); printf("%x\n", riff->size);
+    AVI_LIST_HEAD *riff = (AVI_LIST_HEAD*)pdata;
     if (riff->List != RIFF_ID || riff->FourCC != AVI_ID) {
         return -1;
     }

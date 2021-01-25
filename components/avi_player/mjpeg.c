@@ -167,7 +167,9 @@ static void jpeg_filerw_src_init(j_decompress_ptr cinfo)
  * Sample routine for JPEG decompression.  We assume that the source file name
  * is passed in.  We want to return 1 on success, 0 on error.
  */
-
+#include "screen_driver.h"
+extern scr_driver_t g_lcd;
+static uint16_t g_line_buffer[240];
 
 void mjpegdraw(uint8_t *mjpegbuffer,uint32_t size)
 {
@@ -283,13 +285,19 @@ void mjpegdraw(uint8_t *mjpegbuffer,uint32_t size)
     }
 #else
     // Address = DisplayAddr + 2*(LCD_PIXEL_WIDTH*(cinfo.output_scanline-1));  
-    // for(index = 0; index < cinfo.output_width; index++)
-    // {     
-    //   *(__IO uint16_t*) (Address) = ((*color) >> 3)<<11 | ((*(color+1))>> 2) << 5 | (*(color+2)) >> 3;
-    //   /*jump on next byte */
-    //   color+=3;
-    //   Address+=2;
-    // }
+    // printf("%d, %d\n", cinfo.output_width, cinfo.output_scanline);
+    if (cinfo.output_scanline < 240)
+    {
+      for(index = 0; index < 240; index++)
+      {     
+        g_line_buffer[index] = ((*color) >> 3)<<11 | ((*(color+1))>> 2) << 5 | (*(color+2)) >> 3;
+        color+=3;
+      }
+      g_lcd.draw_bitmap(0, cinfo.output_scanline, 240, 1, g_line_buffer);
+    }
+
+    
+
 #endif    
   }
 

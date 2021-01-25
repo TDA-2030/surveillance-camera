@@ -93,6 +93,10 @@ void avi_play(const char *filename)
     BytesRD = Strsize+8;
 
     while (1) { //播放循环
+        if (BytesRD >= AVI_file.movi_size) {
+            ESP_LOGI(TAG, "paly end");
+            break;
+        }
         if (Strtype == T_vids) { //显示帧
             mjpegdraw(pbuffer, Strsize);
 
@@ -105,13 +109,10 @@ void avi_play(const char *filename)
             ESP_LOGE(TAG, "unknow frame");
             break;
         }
-        if (BytesRD >= AVI_file.movi_size) {
-            ESP_LOGI(TAG, "paly end");
-            break;
-        }
+        
         Strsize = read_frame(avi_file, pbuffer, &Strtype); //读入整帧
         
-        ESP_LOGI(TAG, "type=%x, size=%d", Strtype, Strsize);
+        ESP_LOGD(TAG, "type=%x, size=%d", Strtype, Strsize);
         BytesRD += Strsize+8;
     }
     free(pbuffer);

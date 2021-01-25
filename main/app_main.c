@@ -58,7 +58,7 @@ static TaskHandle_t task_handle_camera;
 SysStatus_t SystemStatus = 0;
 
 
-static scr_driver_fun_t lcd;
+scr_driver_t g_lcd;
 static scr_info_t lcd_info;
 
 
@@ -91,13 +91,13 @@ static esp_err_t image_save(uint8_t *pdata, uint32_t length, const char *path)
 
 static void screen_clear(int color)
 {
-    lcd.get_info(&lcd_info);
+    g_lcd.get_info(&lcd_info);
     ESP_LOGI(TAG, "lcd clean to %x", color);
     uint16_t *buffer = malloc(lcd_info.width * sizeof(uint16_t));
     if (NULL == buffer) {
         for (size_t y = 0; y < lcd_info.height; y++) {
             for (size_t x = 0; x < lcd_info.width; x++) {
-                lcd.draw_pixel(x, y, color);
+                g_lcd.draw_pixel(x, y, color);
             }
         }
     } else {
@@ -106,7 +106,7 @@ static void screen_clear(int color)
         }
 
         for (int y = 0; y < lcd_info.height; y++) {
-            lcd.draw_bitmap(0, y, lcd_info.width, 1, buffer);
+            g_lcd.draw_bitmap(0, y, lcd_info.width, 1, buffer);
         }
 
         free(buffer);
@@ -124,27 +124,29 @@ static void lcd_init(void)
     // spi_bus_handle_t spi_bus = spi_bus_create(HSPI_HOST, &spi_cfg);
     ESP_LOGI(TAG, "lcd_init");
 
-    iface_spi_config_t spi_lcd_cfg = {
+    scr_interface_spi_config_t spi_lcd_cfg = {
         .spi_bus = NULL,
         .pin_num_cs = 12,
         .pin_num_dc = 4,
-        .clk_freq = 40000000,
-        .swap_data = 0,
+        .clk_freq = 20000000,
+        .swap_data = 1,
     };
 
-    scr_iface_driver_fun_t *iface_drv;
-    scr_iface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
+    scr_interface_driver_t *iface_drv;
+    scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
 
     scr_controller_config_t lcd_cfg = {0};
-    lcd_cfg.iface_drv = iface_drv,
-    lcd_cfg.pin_num_rst = -1,
-    lcd_cfg.pin_num_bckl = -1,
-    lcd_cfg.rst_active_level = 0,
-    lcd_cfg.bckl_active_level = 1,
+    lcd_cfg.iface_drv = iface_drv;
+    lcd_cfg.pin_num_rst = -1;
+    lcd_cfg.pin_num_bckl = -1;
+    lcd_cfg.rst_active_level = 0;
+    lcd_cfg.bckl_active_level = 1;
+    lcd_cfg.offset_hor=0;
+    lcd_cfg.offset_ver=0;
     lcd_cfg.width = 240;
     lcd_cfg.height = 240;
-    lcd_cfg.rotate = SCR_DIR_LRTB;
-    scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &lcd);
+    lcd_cfg.rotate = SCR_DIR_TBRL;
+    scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
 
     screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
 }
@@ -218,7 +220,7 @@ static void camera_task(void *arg)
             app_sntp_get_time(&timeinfo);
             strftime(strftime_buf, sizeof(strftime_buf), "%y-%m-%d_%H-%M-%S.jpg", &timeinfo);
             // image_save(image_fb->buf, image_fb->len,strftime_buf);
-            lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
+            g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
             // screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
             // screen_clear(COLOR_BLUE);
             
@@ -229,7 +231,6 @@ static void camera_task(void *arg)
 
         // vTaskDelay(500 / portTICK_PERIOD_MS);
     }
-
 }
 
 
@@ -333,11 +334,9 @@ void app_main()
 
     led_init();
     app_camera_init();
-    // app_sdcard_init();
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     fm_mkdir("/sdcard/picture");
-
-    // lcd_init();
+    lcd_init();
     
     bool is_configured;
     captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
