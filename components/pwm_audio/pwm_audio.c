@@ -607,7 +607,7 @@ esp_err_t pwm_audio_get_volume(int8_t *volume)
     return ESP_OK;
 }
 
-esp_err_t IRAM_ATTR pwm_audio_write(uint8_t *inbuf, size_t inbuf_len, size_t *bytes_written, TickType_t ticks_to_wait)
+esp_err_t pwm_audio_write(uint8_t *inbuf, size_t inbuf_len, size_t *bytes_written, TickType_t ticks_to_wait)
 {
     esp_err_t res = ESP_OK;
     pwm_audio_handle_t handle = g_pwm_audio_handle;
