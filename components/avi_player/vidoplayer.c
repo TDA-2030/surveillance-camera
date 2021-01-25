@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "file_manage.h"
@@ -9,6 +11,11 @@
 #include "mjpeg.h"
 
 static const char *TAG = "avi player";
+
+#define PLAYER_CHECK(a, str, ret)  if(!(a)) {                                             \
+        ESP_LOGE(TAG,"%s:%d (%s):%s", __FILE__, __LINE__, __FUNCTION__, str);      \
+        return (ret);                                                                   \
+        }
 
 /**
  * TODO: how to recognize each stream id
@@ -39,7 +46,32 @@ static void audio_init(void)
 
     pwm_audio_set_volume(0);
 }
+static esp_err_t image_save(uint8_t *pdata, uint32_t length, int path)
+{
 
+    uint32_t written, len = length;
+    int64_t fr_start = esp_timer_get_time();
+    char name[64];
+    sprintf(name, "/sdcard/img-%d.jpg", path);
+    FILE *f = fopen(name, "wb");
+    int64_t fr_end = esp_timer_get_time();
+    ESP_LOGI(TAG, "open [%s] time:%ums", name, (uint32_t)((fr_end - fr_start) / 1000));
+    PLAYER_CHECK(NULL != f, "Failed to open file for writing", ESP_FAIL);
+    
+    do
+    {
+        written = fwrite(pdata, 1, len, f);printf("len=%d, written=%d\n", len, written);
+        len -= written;
+        pdata += written;
+
+    }
+    while ( written && len );
+    fclose(f);
+    fr_end = esp_timer_get_time();
+    ESP_LOGI(TAG, "File written: %uB %ums", length, (uint32_t)((fr_end - fr_start) / 1000));
+    
+    return ESP_OK;
+}
 static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t *fourcc)
 {
     AVI_CHUNK_HEAD head;
@@ -91,6 +123,7 @@ void avi_play(const char *filename)
     fseek(avi_file, AVI_file.movi_start, SEEK_SET); // 偏移到movi list
     Strsize = read_frame(avi_file, pbuffer, &Strtype);
     BytesRD = Strsize+8;
+    int index=0;
 
     while (1) { //播放循环
         if (BytesRD >= AVI_file.movi_size) {
@@ -98,7 +131,9 @@ void avi_play(const char *filename)
             break;
         }
         if (Strtype == T_vids) { //显示帧
-            mjpegdraw(pbuffer, Strsize);
+            // mjpegdraw(pbuffer, Strsize);
+            image_save(pbuffer, Strsize, index++);
+            vTaskDelay(5000 / portTICK_PERIOD_MS);
 
         }//显示帧
         else if (Strtype == T_auds) { //音频输出
