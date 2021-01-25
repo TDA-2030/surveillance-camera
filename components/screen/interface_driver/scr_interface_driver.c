@@ -154,13 +154,13 @@ static esp_err_t i2c_lcd_release(void *handle)
 #define LCD_DATA_LEV  (1)
 
 typedef struct {
-    spi_device_handle_t spi_wr_dev;
+    spi_bus_device_handle_t spi_wr_dev;
     int8_t pin_num_dc;
     uint8_t swap_data;
     scr_interface_driver_t interface_drv;
 } interface_spi_handle_t;
 
-static esp_err_t spi_lcd_driver_init(const scr_interface_spi_config_t *cfg, interface_spi_handle_t *out_iface_spi)
+static esp_err_t spi_lcd_driver_init(const scr_interface_spi_config_t *cfg, interface_spi_handle_t *out_interface_spi)
 {
     LCD_IFACE_CHECK(GPIO_IS_VALID_OUTPUT_GPIO(cfg->pin_num_cs), "gpio cs invalid", ESP_ERR_INVALID_ARG);
     LCD_IFACE_CHECK(GPIO_IS_VALID_OUTPUT_GPIO(cfg->pin_num_dc), "gpio dc invalid", ESP_ERR_INVALID_ARG);
@@ -168,109 +168,82 @@ static esp_err_t spi_lcd_driver_init(const scr_interface_spi_config_t *cfg, inte
     //Initialize non-SPI GPIOs
     gpio_pad_select_gpio(cfg->pin_num_dc);
     gpio_set_direction(cfg->pin_num_dc, GPIO_MODE_OUTPUT);
-    out_iface_spi->pin_num_dc = cfg->pin_num_dc;
-    out_iface_spi->swap_data = cfg->swap_data;
+    out_interface_spi->pin_num_dc = cfg->pin_num_dc;
+    out_interface_spi->swap_data = cfg->swap_data;
 
-    spi_device_interface_config_t devcfg={
-        .clock_speed_hz=cfg->clk_freq,           //Clock out at 10 MHz
-        .mode=0,                                //SPI mode 0
-        .spics_io_num=cfg->pin_num_cs,               //CS pin
-        .queue_size=7,                          //We want to be able to queue 7 transactions at a time
-        .flags = SPI_DEVICE_NO_DUMMY,
+    spi_device_config_t devcfg = {
+        .clock_speed_hz = cfg->clk_freq,     //Clock out frequency
+        .mode = 0,                           //SPI mode 0
+        .cs_io_num = cfg->pin_num_cs,        //CS pin
     };
-
-    //Attach the LCD to the SPI bus
-    spi_bus_add_device(HSPI_HOST, &devcfg, &out_iface_spi->spi_wr_dev);
-
-    LCD_IFACE_CHECK(NULL != out_iface_spi->spi_wr_dev, "spi device initialize failed", ESP_FAIL);
+    out_interface_spi->spi_wr_dev = spi_bus_device_create(cfg->spi_bus, &devcfg);
+    LCD_IFACE_CHECK(NULL != out_interface_spi->spi_wr_dev, "spi device initialize failed", ESP_FAIL);
 
     return ESP_OK;
 }
 
-static esp_err_t spi_lcd_driver_deinit(interface_spi_handle_t *iface_spi)
+static esp_err_t spi_lcd_driver_deinit(interface_spi_handle_t *interface_spi)
 {
-    spi_bus_remove_device(iface_spi->spi_wr_dev);
+    spi_bus_device_delete(&interface_spi->spi_wr_dev);
     return ESP_OK;
 }
 
 static esp_err_t spi_lcd_driver_acquire(void *handle)
 {
-    interface_spi_handle_t *iface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
-    spi_device_acquire_bus(iface_spi->spi_wr_dev, portMAX_DELAY);
     return ESP_ERR_NOT_SUPPORTED;
 }
 
 static esp_err_t spi_lcd_driver_release(void *handle)
 {
-    interface_spi_handle_t *iface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
-    spi_device_release_bus(iface_spi->spi_wr_dev);
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-static esp_err_t _lcd_spi_rw(spi_device_handle_t spi, const uint8_t *output, uint8_t *input, uint32_t length)
+static esp_err_t _lcd_spi_rw(spi_bus_device_handle_t spi, const uint8_t *output, uint8_t *input, uint32_t length)
 {
     LCD_IFACE_CHECK(0 != length, "Length should not be 0", ESP_ERR_INVALID_ARG);
-    esp_err_t ret;
-    spi_transaction_t trans = {
-        .length = length * 8,
-        .tx_buffer = NULL,
-        .rx_buffer = NULL
-    };
-
-    if (output) {
-        trans.tx_buffer = output;
-    }
-
-    if (input) {
-        trans.rx_buffer = input;
-    }
-
-    ret = spi_device_polling_transmit(spi, &trans);
-    LCD_IFACE_CHECK(ret == ESP_OK, "spi transfer bytes failed", ret);
-    return ESP_OK;
-    // return spi_bus_transfer_bytes(spi, output, input, length);
+    return spi_bus_transfer_bytes(spi, output, input, length);
 }
 
 static esp_err_t spi_lcd_driver_write_cmd(void *handle, uint16_t value)
 {
-    interface_spi_handle_t *iface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
+    interface_spi_handle_t *interface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
     esp_err_t ret;
-    gpio_set_level(iface_spi->pin_num_dc, LCD_CMD_LEV);
+    gpio_set_level(interface_spi->pin_num_dc, LCD_CMD_LEV);
     uint8_t data = value;
-    ret = _lcd_spi_rw(iface_spi->spi_wr_dev, &data, NULL, 1);
-    gpio_set_level(iface_spi->pin_num_dc, LCD_DATA_LEV);
+    ret = _lcd_spi_rw(interface_spi->spi_wr_dev, &data, NULL, 1);
+    gpio_set_level(interface_spi->pin_num_dc, LCD_DATA_LEV);
     LCD_IFACE_CHECK(ESP_OK == ret, "Send cmd failed", ESP_FAIL);
     return ESP_OK;
 }
 
 static esp_err_t spi_lcd_driver_write_data(void *handle, uint16_t value)
 {
-    interface_spi_handle_t *iface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
+    interface_spi_handle_t *interface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
     esp_err_t ret;
     uint8_t data = value;
-    ret = _lcd_spi_rw(iface_spi->spi_wr_dev, &data, NULL, 1);
+    ret = _lcd_spi_rw(interface_spi->spi_wr_dev, &data, NULL, 1);
     LCD_IFACE_CHECK(ESP_OK == ret, "Send cmd failed", ESP_FAIL);
     return ESP_OK;
 }
 
 static esp_err_t spi_lcd_driver_read(void *handle, uint8_t *data, uint32_t length)
 {
-    interface_spi_handle_t *iface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
+    interface_spi_handle_t *interface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
     esp_err_t ret;
-    ret = _lcd_spi_rw(iface_spi->spi_wr_dev, NULL, data, length);
+    ret = _lcd_spi_rw(interface_spi->spi_wr_dev, NULL, data, length);
     LCD_IFACE_CHECK(ESP_OK == ret, "Read data failed", ESP_FAIL);
     return ESP_OK;
 }
 
-static esp_err_t spi_lcd_driver_write(void *handle, uint8_t *data, uint32_t length)
+static esp_err_t spi_lcd_driver_write(void *handle, const uint8_t *data, uint32_t length)
 {
-    interface_spi_handle_t *iface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
+    interface_spi_handle_t *interface_spi = __containerof(handle, interface_spi_handle_t, interface_drv);
     esp_err_t ret;
 
     /**< Swap the high and low byte of the data */
     uint32_t l = length / 2;
     uint16_t t;
-    if (iface_spi->swap_data) {
+    if (interface_spi->swap_data) {
         uint16_t *p = (uint16_t *)data;
         for (size_t i = 0; i < l; i++) {
             t = *p;
@@ -278,7 +251,7 @@ static esp_err_t spi_lcd_driver_write(void *handle, uint8_t *data, uint32_t leng
             p++;
         }
     }
-    ret = _lcd_spi_rw(iface_spi->spi_wr_dev, data, NULL, length);
+    ret = _lcd_spi_rw(interface_spi->spi_wr_dev, data, NULL, length);
 
     /**
      * @brief swap data to restore the order of data
@@ -286,7 +259,7 @@ static esp_err_t spi_lcd_driver_write(void *handle, uint8_t *data, uint32_t leng
      * TODO: how to avoid swap data here
      *
      */
-    if (iface_spi->swap_data) {
+    if (interface_spi->swap_data) {
         uint16_t *_p = (uint16_t *)data;
         for (size_t i = 0; i < l; i++) {
             t = *_p;

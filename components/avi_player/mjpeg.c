@@ -295,7 +295,7 @@ void mjpegdraw(uint8_t *mjpegbuffer,uint32_t size)
       }
       g_lcd.draw_bitmap(0, cinfo.output_scanline, 240, 1, g_line_buffer);
     }
-
+    
     
 
 #endif    

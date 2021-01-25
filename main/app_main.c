@@ -115,17 +115,17 @@ static void screen_clear(int color)
 
 static void lcd_init(void)
 {
-    // spi_config_t spi_cfg = {
-    //     .miso_io_num = 2,
-    //     .mosi_io_num = 15,
-    //     .sclk_io_num = 14,
-    //     .max_transfer_sz = 320 * 480,
-    // };
-    // spi_bus_handle_t spi_bus = spi_bus_create(HSPI_HOST, &spi_cfg);
+    spi_config_t spi_cfg = {
+        .miso_io_num = -1,
+        .mosi_io_num = 1, //txd
+        .sclk_io_num = 3, //rxd
+        .max_transfer_sz = 240 * 320,
+    };
+    spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
     ESP_LOGI(TAG, "lcd_init");
 
     scr_interface_spi_config_t spi_lcd_cfg = {
-        .spi_bus = NULL,
+        .spi_bus = spi_bus,
         .pin_num_cs = 12,
         .pin_num_dc = 4,
         .clk_freq = 20000000,
@@ -336,7 +336,7 @@ void app_main()
     app_camera_init();
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     fm_mkdir("/sdcard/picture");
-    lcd_init();
+    // lcd_init();
     
     bool is_configured;
     captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
