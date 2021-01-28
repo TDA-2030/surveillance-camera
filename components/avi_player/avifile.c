@@ -104,7 +104,7 @@ static int Strl_Parser(const uint8_t *buffer, uint32_t length, uint32_t *list_le
     } else if(auds_ID == strh->fourcc_type) {
         ESP_LOGI(TAG, "Find a audio stream");
         AVI_AUDS_STRF_CHUNK *strf = (AVI_AUDS_STRF_CHUNK*)pdata;
-        if (strf->FourCC != strf_ID || strf->size+8 != sizeof(AVI_AUDS_STRF_CHUNK)) {
+        if (strf->FourCC != strf_ID || (strf->size+8 != sizeof(AVI_AUDS_STRF_CHUNK) && strf->size+10 != sizeof(AVI_AUDS_STRF_CHUNK))) {
             ESP_LOGE(TAG, "FourCC=0x%x|%x, size=%d|%d", strf->FourCC, strf_ID, strf->size, sizeof(AVI_AUDS_STRF_CHUNK));
             return -5;
         }
