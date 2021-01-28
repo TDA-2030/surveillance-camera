@@ -112,7 +112,8 @@ spi_bus_device_handle_t spi_bus_device_create(spi_bus_device_handle_t bus_handle
         .mode = device_conf->mode,
         .spics_io_num = device_conf->cs_io_num,
         .cs_ena_posttrans = 3,      //Keep the CS low 3 cycles after transaction, to stop slave from missing the last bit when CS has less propagation delay than CLK
-        .queue_size = 3
+        .queue_size = 3,
+        .flags = SPI_DEVICE_HALFDUPLEX,
     };
     esp_err_t ret = spi_bus_add_device(spi_bus->host_id, &devcfg, &spi_dev->handle);
     SPI_BUS_CHECK_GOTO(ESP_OK == ret, "add spi device failed", cleanup_device);
