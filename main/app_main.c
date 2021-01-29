@@ -117,9 +117,9 @@ static void lcd_init(void)
 {
     spi_config_t spi_cfg = {
         .miso_io_num = -1,
-        .mosi_io_num = 1, //txd
-        .sclk_io_num = 3, //rxd
-        .max_transfer_sz = 240 * 320,
+        .mosi_io_num = 22, //txd
+        .sclk_io_num = 23, //rxd
+        .max_transfer_sz = 240 * 240*2+10,
     };
     spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
     ESP_LOGI(TAG, "lcd_init");
@@ -128,8 +128,8 @@ static void lcd_init(void)
         .spi_bus = spi_bus,
         .pin_num_cs = 12,
         .pin_num_dc = 4,
-        .clk_freq = 20000000,
-        .swap_data = 1,
+        .clk_freq = 60000000,
+        .swap_data = 0,
     };
 
     scr_interface_driver_t *iface_drv;
@@ -199,20 +199,7 @@ static void camera_task(void *arg)
             }
             {
                 jpg2rgb888((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888, JPG_SCALE_NONE);
-                uint32_t pix_count = img_width*img_height;
-                for(uint32_t i=0; i<pix_count; i++) {
-                    uint16_t b = img_rgb888[3*i];
-                    uint16_t g = img_rgb888[3*i+1];
-                    uint16_t r = img_rgb888[3*i+2];
-                    uint16_t c = ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3);
-                    img_rgb888[2*i] = c>>8;
-                    img_rgb888[2*i+1] = c&0xff;
-                    // hb = *src_buf++;
-                    // lb = *src_buf++;
-                    // *rgb_buf++ = (lb & 0x1F) << 3;
-                    // *rgb_buf++ = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-                    // *rgb_buf++ = hb & 0xF8;
-                }
+              
             }
 
             char strftime_buf[64];
@@ -336,25 +323,26 @@ void app_main()
     app_camera_init();
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     fm_mkdir("/sdcard/picture");
-    // lcd_init();
+    lcd_init();
     
-    bool is_configured;
-    captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
+    // bool is_configured;
+    // captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
 
-    if (is_configured) {
-        wifi_config_t wifi_config;
-        esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config);
-        ESP_LOGI(TAG, "SSID:%s, PASSWORD:%s", wifi_config.sta.ssid, wifi_config.sta.password);
-    }
-    captive_portal_wait(portMAX_DELAY);
-    SYS_STATUS_SET(SYS_STATUS_CONNECTED);
-    app_sntp_start();
-    esp_wifi_set_ps(WIFI_PS_NONE);
+    // if (is_configured) {
+    //     wifi_config_t wifi_config;
+    //     esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config);
+    //     ESP_LOGI(TAG, "SSID:%s, PASSWORD:%s", wifi_config.sta.ssid, wifi_config.sta.password);
+    // }
+    // captive_portal_wait(portMAX_DELAY);
+    // SYS_STATUS_SET(SYS_STATUS_CONNECTED);
+    // app_sntp_start();
+    // esp_wifi_set_ps(WIFI_PS_NONE);
 
-    start_file_server();
+    // start_file_server();
+
 
     vTaskDelay(pdMS_TO_TICKS(1000));
-    avi_play("/sdcard/test.avi");
+    avi_play("/sdcard/tom-240.avi");
     // avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60*1);
 
     // xTaskCreate(camera_task,

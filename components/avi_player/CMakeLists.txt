@@ -29,4 +29,4 @@ idf_component_register(SRCS avifile.c
                             jpeg-9a/jidctflt.c
                             jpeg-9a/jidctfst.c
                        INCLUDE_DIRS . jpeg-9a
-                       REQUIRES file_server screen pwm_audio)
+                       REQUIRES file_server screen esp32-camera pwm_audio)

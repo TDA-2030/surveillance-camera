@@ -34,7 +34,7 @@ static void audio_init(void)
 {
     pwm_audio_config_t pac;
     pac.duty_resolution    = LEDC_TIMER_10_BIT;
-    pac.gpio_num_left      = 12;
+    pac.gpio_num_left      = 25;
     pac.ledc_channel_left  = LEDC_CHANNEL_0;
     pac.gpio_num_right     = -1;
     pac.ledc_channel_right = LEDC_CHANNEL_1;
@@ -46,32 +46,7 @@ static void audio_init(void)
 
     pwm_audio_set_volume(0);
 }
-static esp_err_t image_save(uint8_t *pdata, uint32_t length, int path)
-{
 
-    uint32_t written, len = length;
-    int64_t fr_start = esp_timer_get_time();
-    char name[64];
-    sprintf(name, "/sdcard/img-%d.jpg", path);
-    FILE *f = fopen(name, "wb");
-    int64_t fr_end = esp_timer_get_time();
-    ESP_LOGI(TAG, "open [%s] time:%ums", name, (uint32_t)((fr_end - fr_start) / 1000));
-    PLAYER_CHECK(NULL != f, "Failed to open file for writing", ESP_FAIL);
-    
-    do
-    {
-        written = fwrite(pdata, 1, len, f);printf("len=%d, written=%d\n", len, written);
-        len -= written;
-        pdata += written;
-
-    }
-    while ( written && len );
-    fclose(f);
-    fr_end = esp_timer_get_time();
-    ESP_LOGI(TAG, "File written: %uB %ums", length, (uint32_t)((fr_end - fr_start) / 1000));
-    
-    return ESP_OK;
-}
 static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t *fourcc)
 {
     AVI_CHUNK_HEAD head;
@@ -85,6 +60,28 @@ static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t *fourcc)
     }
     uint32_t ret = fread(buffer, head.size, 1, file);
     return head.size;
+}
+
+#include "esp_camera.h"
+#include "screen_driver.h"
+extern scr_driver_t g_lcd;
+
+static void audio_task(void *args)
+{
+    while (1)
+    {
+        /* code */
+    }
+    vTaskDelete(NULL);
+}
+
+static void video_task(void *args)
+{
+    while (1)
+    {
+        /* code */
+    }
+    vTaskDelete(NULL);
 }
 
 void avi_play(const char *filename)
@@ -120,10 +117,18 @@ void avi_play(const char *filename)
     pwm_audio_set_param(AVI_file.auds_sample_rate, AVI_file.auds_bits, AVI_file.auds_channels);
     pwm_audio_start();
 
+    uint16_t img_width = AVI_file.vids_width;
+    uint16_t img_height = AVI_file.vids_height;
+    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*3, MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    if (NULL == img_rgb888)
+    {
+        ESP_LOGE(TAG, "malloc for rgb888 failed");
+        goto EXIT;
+    }
+
     fseek(avi_file, AVI_file.movi_start, SEEK_SET); // 偏移到movi list
     Strsize = read_frame(avi_file, pbuffer, &Strtype);
     BytesRD = Strsize+8;
-    int index=0;
 
     while (1) { //播放循环
         if (BytesRD >= AVI_file.movi_size) {
@@ -132,8 +137,12 @@ void avi_play(const char *filename)
         }
         if (Strtype == T_vids) { //显示帧
             // mjpegdraw(pbuffer, Strsize);
-            image_save(pbuffer, Strsize, index++);
-            vTaskDelay(5000 / portTICK_PERIOD_MS);
+            int64_t fr_end = esp_timer_get_time();
+            jpg2rgb565((const uint8_t *)pbuffer, Strsize, img_rgb888, JPG_SCALE_NONE);
+            ESP_LOGI(TAG, "jpg %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
+    
+            g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
+            ESP_LOGI(TAG, "draw %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
 
         }//显示帧
         else if (Strtype == T_auds) { //音频输出
@@ -144,12 +153,14 @@ void avi_play(const char *filename)
             ESP_LOGE(TAG, "unknow frame");
             break;
         }
-        
+        int64_t fr_end = esp_timer_get_time();
         Strsize = read_frame(avi_file, pbuffer, &Strtype); //读入整帧
+        ESP_LOGI(TAG, "read %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
         
         ESP_LOGD(TAG, "type=%x, size=%d", Strtype, Strsize);
         BytesRD += Strsize+8;
     }
+EXIT:
     free(pbuffer);
     fclose(avi_file);
 }
