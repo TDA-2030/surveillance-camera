@@ -41,13 +41,13 @@ static void audio_init(void)
     pac.ledc_timer_sel     = LEDC_TIMER_0;
     pac.tg_num             = TIMER_GROUP_0;
     pac.timer_num          = TIMER_0;
-    pac.ringbuf_len        = 1024 * 32;
+    pac.ringbuf_len        = 1024 * 8;
     pwm_audio_init(&pac);
 
     pwm_audio_set_volume(0);
 }
 
-static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t *fourcc)
+static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t length, uint32_t *fourcc)
 {
     AVI_CHUNK_HEAD head;
     fread(&head, sizeof(AVI_CHUNK_HEAD), 1, file);
@@ -58,6 +58,11 @@ static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t *fourcc)
     if (head.size % 2) {
         head.size++;    //奇数加1
     }
+    if (length < head.size) {
+        ESP_LOGE(TAG, "frame size too large");
+        return 0;
+    }
+    
     uint32_t ret = fread(buffer, head.size, 1, file);
     return head.size;
 }
@@ -92,6 +97,7 @@ void avi_play(const char *filename)
     uint32_t  Strsize;
     uint32_t  Strtype;
     uint8_t *pbuffer;
+    uint32_t buffer_size = 22*1024;
 
     avi_file = fopen(filename, "rb");
     if (avi_file == NULL) {
@@ -99,7 +105,7 @@ void avi_play(const char *filename)
         return;
     }
 
-    pbuffer = malloc(1024 * 30);
+    pbuffer = malloc(buffer_size);
     if (pbuffer == NULL) {
         ESP_LOGE(TAG, "Cannot alloc memory for palyer");
         fclose(avi_file);
@@ -119,7 +125,7 @@ void avi_play(const char *filename)
 
     uint16_t img_width = AVI_file.vids_width;
     uint16_t img_height = AVI_file.vids_height;
-    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*3, MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*2, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
     if (NULL == img_rgb888)
     {
         ESP_LOGE(TAG, "malloc for rgb888 failed");
@@ -127,7 +133,7 @@ void avi_play(const char *filename)
     }
 
     fseek(avi_file, AVI_file.movi_start, SEEK_SET); // 偏移到movi list
-    Strsize = read_frame(avi_file, pbuffer, &Strtype);
+    Strsize = read_frame(avi_file, pbuffer, buffer_size, &Strtype);
     BytesRD = Strsize+8;
 
     while (1) { //播放循环
@@ -136,13 +142,14 @@ void avi_play(const char *filename)
             break;
         }
         if (Strtype == T_vids) { //显示帧
-            // mjpegdraw(pbuffer, Strsize);
             int64_t fr_end = esp_timer_get_time();
-            jpg2rgb565((const uint8_t *)pbuffer, Strsize, img_rgb888, JPG_SCALE_NONE);
-            ESP_LOGI(TAG, "jpg %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
+            mjpegdraw(pbuffer, Strsize, img_rgb888);
+            
+            // jpg2rgb565((const uint8_t *)pbuffer, Strsize, img_rgb888, JPG_SCALE_NONE);
+            ESP_LOGI(TAG, "jpg decode %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
     
             g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
-            ESP_LOGI(TAG, "draw %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
+            // ESP_LOGI(TAG, "draw %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
 
         }//显示帧
         else if (Strtype == T_auds) { //音频输出
@@ -153,14 +160,13 @@ void avi_play(const char *filename)
             ESP_LOGE(TAG, "unknow frame");
             break;
         }
-        int64_t fr_end = esp_timer_get_time();
-        Strsize = read_frame(avi_file, pbuffer, &Strtype); //读入整帧
-        ESP_LOGI(TAG, "read %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
-        
+        Strsize = read_frame(avi_file, pbuffer, buffer_size, &Strtype); //读入整帧
         ESP_LOGD(TAG, "type=%x, size=%d", Strtype, Strsize);
         BytesRD += Strsize+8;
     }
 EXIT:
+pwm_audio_deinit();
+free(img_rgb888);
     free(pbuffer);
     fclose(avi_file);
 }

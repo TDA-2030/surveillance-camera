@@ -149,6 +149,8 @@ static void lcd_init(void)
     scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
 
     screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
+    screen_clear(COLOR_BLUE);vTaskDelay(500 / portTICK_PERIOD_MS);
+    screen_clear(COLOR_RED);vTaskDelay(500 / portTICK_PERIOD_MS);
 }
 
 
@@ -340,9 +342,12 @@ void app_main()
 
     // start_file_server();
 
-
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // avi_play("/sdcard/tom-240.avi");
     vTaskDelay(pdMS_TO_TICKS(1000));
-    avi_play("/sdcard/tom-240.avi");
+    avi_play("/sdcard/taylor.avi");
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // avi_play("/sdcard/Marshmello.avi");
     // avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60*1);
 
     // xTaskCreate(camera_task,
