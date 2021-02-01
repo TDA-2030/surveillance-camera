@@ -3,9 +3,7 @@
 #include <stdlib.h>
 #include "stdint.h"
 
-// #include "stm32f4xx.h"
-// #include "ff.h"
-// #include "./Bsp/lcd/bsp_lcd.h"
+
 
 /*
  * Include file for users of JPEG library.
@@ -24,9 +22,6 @@
 
 #include <setjmp.h>
 
-unsigned int DisplayAddr;
-uint8_t  *jpegbuf;
-uint32_t jbufsize;
 /******************** JPEG DECOMPRESSION SAMPLE INTERFACE *******************/
 
 /* This half of the example shows how to read data from the JPEG decompressor.
@@ -74,6 +69,9 @@ struct my_error_mgr {
 };
 
 typedef struct my_error_mgr * my_error_ptr;
+
+static uint8_t  *jpegbuf;
+static uint32_t jbufsize;
 
 /*
  * Here's the routine that will replace the standard error_exit method:
@@ -167,11 +165,7 @@ static void jpeg_filerw_src_init(j_decompress_ptr cinfo)
  * Sample routine for JPEG decompression.  We assume that the source file name
  * is passed in.  We want to return 1 on success, 0 on error.
  */
-#include "screen_driver.h"
-extern scr_driver_t g_lcd;
-static uint16_t g_line_buffer[240];
-
-void mjpegdraw(uint8_t *mjpegbuffer,uint32_t size)
+void mjpegdraw(uint8_t *mjpegbuffer, uint32_t size, uint8_t *outbuffer)
 {
   /* This struct contains the JPEG decompression parameters and pointers to
    * working space (which is allocated as needed by the JPEG library).
@@ -252,54 +246,31 @@ void mjpegdraw(uint8_t *mjpegbuffer,uint32_t size)
 		((j_common_ptr) &cinfo, JPOOL_IMAGE, row_stride, 1);
   /* Step 6: while (scan lines remain to be read) */
   /*           jpeg_read_scanlines(...); */
-// #if  LCD_RGB_888 
-//   DisplayAddr=LCD_FRAME_BUFFER+3*(LCD_PIXEL_WIDTH*((LCD_PIXEL_HEIGHT-cinfo.output_height)/2)+(LCD_PIXEL_WIDTH-cinfo.output_width)/2);
-// #else
-//   DisplayAddr=LCD_FRAME_BUFFER+2*(LCD_PIXEL_WIDTH*((LCD_PIXEL_HEIGHT-cinfo.output_height)/2)+(LCD_PIXEL_WIDTH-cinfo.output_width)/2);
-// #endif 
-//   LCD_DrawRect((LCD_PIXEL_WIDTH-cinfo.output_width)/2-5,((LCD_PIXEL_HEIGHT-cinfo.output_height)/2)-5,cinfo.output_height+10,cinfo.output_width+10);
+
   /* Here we use the library's state variable cinfo.output_scanline as the
    * loop counter, so that we don't have to keep track ourselves.
-   */
+   *///printf("w=%d, h=%d\n", cinfo.output_width, cinfo.output_height);
   while (cinfo.output_scanline < cinfo.output_height) {
     /* jpeg_read_scanlines expects an array of pointers to scanlines.
      * Here the array is only one element long, but you could ask for
      * more than one scanline at a time if that's more convenient.
      */
-   uint32_t Address,index;
-   uint8_t *color;
     
     (void) jpeg_read_scanlines(&cinfo, buffer, 1);
     /* Assume put_scanline_someplace wants a pointer and sample count. */
-    color=buffer[0];
-#if  LCD_RGB_888
-    Address = DisplayAddr + 3*(LCD_PIXEL_WIDTH*(cinfo.output_scanline-1));  
+    uint8_t *color=buffer[0];
+    uint32_t index;
+    uint32_t y = cinfo.output_scanline - 1;
+    uint16_t *out = (uint16_t*)outbuffer + (y * cinfo.output_width);
     for(index = 0; index < cinfo.output_width; index++)
     {
-  //    *(__IO uint32_t*)Address =*(__IO uint32_t*)color ;
-      *(__IO uint16_t*) (Address) =  (*(color+1)<< 8) | (*color);     
-      *(__IO uint8_t*) (Address+2) =*(color+2);    
-      /*jump on next byte */
+      uint16_t c = ((*color) >> 3)<<11 | ((*(color+1))>> 2) << 5 | (*(color+2)) >> 3;
+      out[index] = c>>8 | c<<8;
       color+=3;
-      Address+=3;
     }
-#else
-    // Address = DisplayAddr + 2*(LCD_PIXEL_WIDTH*(cinfo.output_scanline-1));  
-    // printf("%d, %d\n", cinfo.output_width, cinfo.output_scanline);
-    if (cinfo.output_scanline < 240)
-    {
-      for(index = 0; index < 240; index++)
-      {     
-        g_line_buffer[index] = ((*color) >> 3)<<11 | ((*(color+1))>> 2) << 5 | (*(color+2)) >> 3;
-        color+=3;
-      }
-      g_lcd.draw_bitmap(0, cinfo.output_scanline, 240, 1, g_line_buffer);
-    }
-    
-    
-
-#endif    
+      // g_lcd.draw_bitmap(0, y, 240, 1, g_line_buffer);
   }
+
 
   /* Step 7: Finish decompression */
   (void) jpeg_finish_decompress(&cinfo);
