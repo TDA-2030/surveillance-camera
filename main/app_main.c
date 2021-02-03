@@ -43,7 +43,6 @@
 #include "avi_recorder.h"
 #include "vidoplayer.h"
 
-
 static const char *TAG = "app_main";
 
 #define CAM_CHECK(a, str, ret)  if(!(a)) {                                             \
@@ -60,7 +59,6 @@ SysStatus_t SystemStatus = 0;
 
 scr_driver_t g_lcd;
 static scr_info_t lcd_info;
-
 
 static esp_err_t image_save(uint8_t *pdata, uint32_t length, const char *path)
 {
@@ -117,8 +115,8 @@ static void lcd_init(void)
 {
     spi_config_t spi_cfg = {
         .miso_io_num = -1,
-        .mosi_io_num = 22, //txd
-        .sclk_io_num = 23, //rxd
+        .mosi_io_num = 15, //txd
+        .sclk_io_num = 14, //rxd
         .max_transfer_sz = 240 * 240*2+10,
     };
     spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
@@ -128,7 +126,7 @@ static void lcd_init(void)
         .spi_bus = spi_bus,
         .pin_num_cs = 12,
         .pin_num_dc = 4,
-        .clk_freq = 60000000,
+        .clk_freq = 80000000,
         .swap_data = 0,
     };
 
@@ -145,7 +143,7 @@ static void lcd_init(void)
     lcd_cfg.offset_ver=0;
     lcd_cfg.width = 240;
     lcd_cfg.height = 240;
-    lcd_cfg.rotate = SCR_DIR_TBRL;
+    lcd_cfg.rotate = SCR_DIR_BTLR;
     scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
 
     screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -162,7 +160,7 @@ static void camera_task(void *arg)
     
     int res = 0;
     sensor_t *s = esp_camera_sensor_get();
-    res = s->set_framesize(s, FRAMESIZE_HVGA);
+    res = s->set_framesize(s, FRAMESIZE_HQVGA);
     // res |= s->set_vflip(s, true);
     // res |= s->set_hmirror(s, true);
     if (res)
@@ -170,9 +168,9 @@ static void camera_task(void *arg)
         ESP_LOGE(TAG, "Camera set_framesize failed");
     }
 
-    uint16_t img_width = resolution[FRAMESIZE_HVGA].width;
-    uint16_t img_height = resolution[FRAMESIZE_HVGA].height;
-    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*3, MALLOC_CAP_8BIT|MALLOC_CAP_SPIRAM);
+    uint16_t img_width = resolution[FRAMESIZE_HQVGA].width;
+    uint16_t img_height = resolution[FRAMESIZE_HQVGA].height;
+    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*2, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
     if (NULL == img_rgb888)
     {
         ESP_LOGE(TAG, "malloc for rgb888 failed");
@@ -199,10 +197,8 @@ static void camera_task(void *arg)
                     OneNET_Send_BinFile("image", (const uint8_t *)image_fb->buf, image_fb->len);
                 }
             }
-            {
-                jpg2rgb888((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888, JPG_SCALE_NONE);
-              
-            }
+            
+            jpg2rgb565((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888, JPG_SCALE_NONE);
 
             char strftime_buf[64];
             struct tm timeinfo;
@@ -344,19 +340,19 @@ void app_main()
 
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/tom-240.avi");
-    vTaskDelay(pdMS_TO_TICKS(1000));
-    avi_play("/sdcard/taylor.avi");
+    // vTaskDelay(pdMS_TO_TICKS(1000));
+    // avi_play("/sdcard/taylor.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/Marshmello.avi");
     // avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60*1);
 
-    // xTaskCreate(camera_task,
-    //             "camera_task",
-    //             4096,
-    //             NULL,
-    //             7,
-    //             &task_handle_camera
-    //            );
+    xTaskCreate(camera_task,
+                "camera_task",
+                4096,
+                NULL,
+                7,
+                &task_handle_camera
+               );
     xTaskCreate(misc_task,
                 "misc_task",
                 4096,
