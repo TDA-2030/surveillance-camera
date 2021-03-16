@@ -42,6 +42,7 @@
 #include "file_server.h"
 #include "avi_recorder.h"
 #include "vidoplayer.h"
+#include "mjpeg.h"
 
 static const char *TAG = "app_main";
 
@@ -178,7 +179,7 @@ static void camera_task(void *arg)
     
     while (1)
     {
-        int64_t fr_start = esp_timer_get_time();
+        int64_t last_frame = esp_timer_get_time();
         image_fb = esp_camera_fb_get();
         if (!image_fb)
         {
@@ -197,21 +198,26 @@ static void camera_task(void *arg)
                     OneNET_Send_BinFile("image", (const uint8_t *)image_fb->buf, image_fb->len);
                 }
             }
-            
+            int64_t t1 = esp_timer_get_time()-last_frame;
+            #if 0
             jpg2rgb565((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888, JPG_SCALE_NONE);
+            #else
+            mjpegdraw((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888);
+            #endif
 
             char strftime_buf[64];
             struct tm timeinfo;
-            app_sntp_get_time(&timeinfo);
-            strftime(strftime_buf, sizeof(strftime_buf), "%y-%m-%d_%H-%M-%S.jpg", &timeinfo);
-            // image_save(image_fb->buf, image_fb->len,strftime_buf);
+
+            int64_t t2 = esp_timer_get_time()-last_frame-t1;
             g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
-            // screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
-            // screen_clear(COLOR_BLUE);
+            int64_t t3 = esp_timer_get_time()-last_frame-t2;
+            int64_t fr_end = esp_timer_get_time() - last_frame;
+            printf( "MJPG: %uB %llums, d: %llums d: %llums( %.1ffps)\n", image_fb->len, t1/1000, t2/1000, t3/1000, 1000000.0f/(float)fr_end);
+
             
         }
         
-        ESP_LOGI(TAG, "JPG: %fKB %ums", ((float)image_fb->len/1024), (uint32_t)((esp_timer_get_time() - fr_start) / 1000));
+        // ESP_LOGI(TAG, "JPG: %fKB %ums", ((float)image_fb->len/1024), (uint32_t)((esp_timer_get_time() - last_frame) / 1000));
         esp_camera_fb_return(image_fb);
 
         // vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -319,8 +325,8 @@ void app_main()
 
     led_init();
     app_camera_init();
-    ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
-    fm_mkdir("/sdcard/picture");
+    // ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
+    // fm_mkdir("/sdcard/picture");
     lcd_init();
     
     // bool is_configured;

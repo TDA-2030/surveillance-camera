@@ -91,12 +91,6 @@ typedef struct camera_fb_s {
     struct camera_fb_s * next;
 } camera_fb_int_t;
 
-typedef struct fb_s {
-    uint8_t * buf;
-    size_t len;
-    struct fb_s * next;
-} fb_item_t;
-
 typedef struct {
     camera_config_t config;
     sensor_t sensor;
@@ -289,7 +283,7 @@ static esp_err_t dma_desc_init()
     assert(s_state->width % 4 == 0);
     size_t line_size = s_state->width * s_state->in_bytes_per_pixel *
                        i2s_bytes_per_sample(s_state->sampling_mode);
-    ESP_LOGD(TAG, "Line width (for DMA): %d bytes", line_size);
+    ESP_LOGI(TAG, "width=%d, in_bytes_per_pixel=%d, Line width (for DMA): %d bytes", s_state->width, s_state->in_bytes_per_pixel, line_size);
     size_t dma_per_line = 1;
     size_t buf_size = line_size;
     while (buf_size >= 4096) {
@@ -300,9 +294,9 @@ static esp_err_t dma_desc_init()
     s_state->dma_buf_width = line_size;
     s_state->dma_per_line = dma_per_line;
     s_state->dma_desc_count = dma_desc_count;
-    ESP_LOGD(TAG, "DMA buffer size: %d, DMA buffers per line: %d", buf_size, dma_per_line);
-    ESP_LOGD(TAG, "DMA buffer count: %d", dma_desc_count);
-    ESP_LOGD(TAG, "DMA buffer total: %d bytes", buf_size * dma_desc_count);
+    ESP_LOGI(TAG, "DMA buffer size: %d, DMA buffers per line: %d", buf_size, dma_per_line);
+    ESP_LOGI(TAG, "DMA buffer count: %d", dma_desc_count);
+    ESP_LOGI(TAG, "DMA buffer total: %d bytes", buf_size * dma_desc_count);
 
     s_state->dma_buf = (dma_elem_t**) malloc(sizeof(dma_elem_t*) * dma_desc_count);
     if (s_state->dma_buf == NULL) {
@@ -314,7 +308,7 @@ static esp_err_t dma_desc_init()
     }
     size_t dma_sample_count = 0;
     for (int i = 0; i < dma_desc_count; ++i) {
-        ESP_LOGD(TAG, "Allocating DMA buffer #%d, size=%d", i, buf_size);
+        ESP_LOGI(TAG, "Allocating DMA buffer #%d, size=%d", i, buf_size);
         dma_elem_t* buf = (dma_elem_t*) malloc(buf_size);
         if (buf == NULL) {
             return ESP_ERR_NO_MEM;
@@ -338,6 +332,7 @@ static esp_err_t dma_desc_init()
         pd->eof = 1;
         pd->qe.stqe_next = &s_state->dma_desc[(i + 1) % dma_desc_count];
     }
+    ESP_LOGI(TAG, "dma_sample_count=%d", dma_sample_count);
     s_state->dma_sample_count = dma_sample_count;
     return ESP_OK;
 }
@@ -460,7 +455,7 @@ static void IRAM_ATTR i2s_start_bus()
     esp_intr_disable(s_state->i2s_intr_handle);
     i2s_conf_reset();
 
-    I2S0.rx_eof_num = s_state->dma_sample_count;
+    I2S0.rx_eof_num = s_state->dma_sample_count; // is used for configuring the data size of a singletransfer operation, in multiples of one word.
     I2S0.in_link.addr = (uint32_t) &s_state->dma_desc[0];
     I2S0.in_link.start = 1;
     I2S0.int_clr.val = I2S0.int_raw.val;
@@ -534,7 +529,7 @@ static void IRAM_ATTR i2s_stop(bool* need_yield)
     }
 }
 
-static void signal_dma_buf_received(bool* need_yield)
+static void IRAM_ATTR signal_dma_buf_received(bool* need_yield)
 {
     size_t dma_desc_filled = s_state->dma_desc_cur;
     s_state->dma_desc_cur = (dma_desc_filled + 1) % s_state->dma_desc_count;
@@ -583,7 +578,7 @@ static void IRAM_ATTR vsync_isr(void* arg)
             if(s_state->dma_filtered_count > 1 || s_state->fb->bad || s_state->config.fb_count > 1) {
                 i2s_stop(&need_yield);
             }
-            //ets_printf("vs\n");
+            // ets_printf("vs\n");
         }
         if(s_state->config.fb_count > 1 || s_state->dma_filtered_count < 2) {
             I2S0.conf.rx_start = 0;
@@ -666,6 +661,7 @@ static void camera_fb_done()
 static void dma_finish_frame()
 {
     size_t buf_len = s_state->width * s_state->fb_bytes_per_pixel / s_state->dma_per_line;
+    // ets_printf("buf_len=%d\n", buf_len);
 
     if(!s_state->fb->ref) {
         // is the frame bad?
@@ -770,175 +766,10 @@ static void dma_filter_task(void *pvParameters)
         }
     }
 }
+#include "dma_filter.c"
 
-static void dma_filter_jpeg(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
-    // manually unrolling 4 iterations of the loop here
-    for (size_t i = 0; i < end; ++i) {
-        dst[0] = src[0].sample1;
-        dst[1] = src[1].sample1;
-        dst[2] = src[2].sample1;
-        dst[3] = src[3].sample1;
-        src += 4;
-        dst += 4;
-    }
-}
-
-static void dma_filter_grayscale(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
-    for (size_t i = 0; i < end; ++i) {
-        // manually unrolling 4 iterations of the loop here
-        dst[0] = src[0].sample1;
-        dst[1] = src[1].sample1;
-        dst[2] = src[2].sample1;
-        dst[3] = src[3].sample1;
-        src += 4;
-        dst += 4;
-    }
-}
-
-static void dma_filter_grayscale_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 8;
-    for (size_t i = 0; i < end; ++i) {
-        // manually unrolling 4 iterations of the loop here
-        dst[0] = src[0].sample1;
-        dst[1] = src[2].sample1;
-        dst[2] = src[4].sample1;
-        dst[3] = src[6].sample1;
-        src += 8;
-        dst += 4;
-    }
-    // the final sample of a line in SM_0A0B_0B0C sampling mode needs special handling
-    if ((dma_desc->length & 0x7) != 0) {
-        dst[0] = src[0].sample1;
-        dst[1] = src[2].sample1;
-    }
-}
-
-static void dma_filter_yuyv(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
-    for (size_t i = 0; i < end; ++i) {
-        dst[0] = src[0].sample1;//y0
-        dst[1] = src[0].sample2;//u
-        dst[2] = src[1].sample1;//y1
-        dst[3] = src[1].sample2;//v
-
-        dst[4] = src[2].sample1;//y0
-        dst[5] = src[2].sample2;//u
-        dst[6] = src[3].sample1;//y1
-        dst[7] = src[3].sample2;//v
-        src += 4;
-        dst += 8;
-    }
-}
-
-static void dma_filter_yuyv_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 8;
-    for (size_t i = 0; i < end; ++i) {
-        dst[0] = src[0].sample1;//y0
-        dst[1] = src[1].sample1;//u
-        dst[2] = src[2].sample1;//y1
-        dst[3] = src[3].sample1;//v
-
-        dst[4] = src[4].sample1;//y0
-        dst[5] = src[5].sample1;//u
-        dst[6] = src[6].sample1;//y1
-        dst[7] = src[7].sample1;//v
-        src += 8;
-        dst += 8;
-    }
-    if ((dma_desc->length & 0x7) != 0) {
-        dst[0] = src[0].sample1;//y0
-        dst[1] = src[1].sample1;//u
-        dst[2] = src[2].sample1;//y1
-        dst[3] = src[2].sample2;//v
-    }
-}
-
-static void dma_filter_rgb888(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 4;
-    uint8_t lb, hb;
-    for (size_t i = 0; i < end; ++i) {
-        hb = src[0].sample1;
-        lb = src[0].sample2;
-        dst[0] = (lb & 0x1F) << 3;
-        dst[1] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[2] = hb & 0xF8;
-
-        hb = src[1].sample1;
-        lb = src[1].sample2;
-        dst[3] = (lb & 0x1F) << 3;
-        dst[4] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[5] = hb & 0xF8;
-
-        hb = src[2].sample1;
-        lb = src[2].sample2;
-        dst[6] = (lb & 0x1F) << 3;
-        dst[7] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[8] = hb & 0xF8;
-
-        hb = src[3].sample1;
-        lb = src[3].sample2;
-        dst[9] = (lb & 0x1F) << 3;
-        dst[10] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[11] = hb & 0xF8;
-        src += 4;
-        dst += 12;
-    }
-}
-
-static void IRAM_ATTR dma_filter_rgb888_highspeed(const dma_elem_t* src, lldesc_t* dma_desc, uint8_t* dst)
-{
-    size_t end = dma_desc->length / sizeof(dma_elem_t) / 8;
-    uint8_t lb, hb;
-    for (size_t i = 0; i < end; ++i) {
-        hb = src[0].sample1;
-        lb = src[1].sample1;
-        dst[0] = (lb & 0x1F) << 3;
-        dst[1] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[2] = hb & 0xF8;
-
-        hb = src[2].sample1;
-        lb = src[3].sample1;
-        dst[3] = (lb & 0x1F) << 3;
-        dst[4] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[5] = hb & 0xF8;
-
-        hb = src[4].sample1;
-        lb = src[5].sample1;
-        dst[6] = (lb & 0x1F) << 3;
-        dst[7] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[8] = hb & 0xF8;
-
-        hb = src[6].sample1;
-        lb = src[7].sample1;
-        dst[9] = (lb & 0x1F) << 3;
-        dst[10] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[11] = hb & 0xF8;
-
-        src += 8;
-        dst += 12;
-    }
-    if ((dma_desc->length & 0x7) != 0) {
-        hb = src[0].sample1;
-        lb = src[1].sample1;
-        dst[0] = (lb & 0x1F) << 3;
-        dst[1] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[2] = hb & 0xF8;
-
-        hb = src[2].sample1;
-        lb = src[2].sample2;
-        dst[3] = (lb & 0x1F) << 3;
-        dst[4] = (hb & 0x07) << 5 | (lb & 0xE0) >> 3;
-        dst[5] = hb & 0xF8;
-    }
-}
+//-----------------------------------------------------------------------------------------
+//-----------------------------------------------------------------------------------------
 
 /*
  * Public Methods
@@ -1075,7 +906,7 @@ esp_err_t camera_probe(const camera_config_t* config, camera_model_t* out_camera
     return ESP_OK;
 }
 
-esp_err_t camera_init(const camera_config_t* config)
+static esp_err_t camera_interface_init(const camera_config_t* config)
 {
     if (!s_state) {
         return ESP_ERR_INVALID_STATE;
@@ -1083,47 +914,22 @@ esp_err_t camera_init(const camera_config_t* config)
     if (s_state->sensor.id.PID == 0) {
         return ESP_ERR_CAMERA_NOT_SUPPORTED;
     }
-    memcpy(&s_state->config, config, sizeof(*config));
+    
     esp_err_t err = ESP_OK;
     framesize_t frame_size = (framesize_t) config->frame_size;
     pixformat_t pix_format = (pixformat_t) config->pixel_format;
 
-    switch (s_state->sensor.id.PID) {
-#if CONFIG_OV2640_SUPPORT
-        case OV2640_PID:
-            if (frame_size > FRAMESIZE_UXGA) {
-                frame_size = FRAMESIZE_UXGA;
-            }
-            break;
-#endif
-#if CONFIG_OV7725_SUPPORT
-        case OV7725_PID:
-            if (frame_size > FRAMESIZE_VGA) {
-                frame_size = FRAMESIZE_VGA;
-            }
-            break;
-#endif
-#if CONFIG_OV3660_SUPPORT
-        case OV3660_PID:
-            if (frame_size > FRAMESIZE_QXGA) {
-                frame_size = FRAMESIZE_QXGA;
-            }
-            break;
-#endif
-#if CONFIG_OV5640_SUPPORT
-        case OV5640_PID:
-            if (frame_size > FRAMESIZE_QSXGA) {
-                frame_size = FRAMESIZE_QSXGA;
-            }
-            break;
-#endif
-        default:
-            return ESP_ERR_CAMERA_NOT_SUPPORTED;
-    }
-
     s_state->width = resolution[frame_size].width;
     s_state->height = resolution[frame_size].height;
 
+    /**
+     * 配置 
+     * s_state->fb_size, 
+     * s_state->in_bytes_per_pixel, 
+     * s_state->fb_bytes_per_pixel, 
+     * s_state->sampling_mode, 
+     * s_state->dma_filter
+     */
     if (pix_format == PIXFORMAT_GRAYSCALE) {
         s_state->fb_size = s_state->width * s_state->height;
         if (s_state->sensor.id.PID == OV3660_PID || s_state->sensor.id.PID == OV5640_PID) {
@@ -1183,7 +989,7 @@ esp_err_t camera_init(const camera_config_t* config)
         } else {
             compression_ratio_bound = 4;
         }
-        (*s_state->sensor.set_quality)(&s_state->sensor, qp);
+        
         s_state->in_bytes_per_pixel = 2;
         s_state->fb_bytes_per_pixel = 2;
         s_state->fb_size = (s_state->width * s_state->height * s_state->fb_bytes_per_pixel) / compression_ratio_bound;
@@ -1195,11 +1001,14 @@ esp_err_t camera_init(const camera_config_t* config)
         goto fail;
     }
 
-    ESP_LOGD(TAG, "in_bpp: %d, fb_bpp: %d, fb_size: %d, mode: %d, width: %d height: %d",
+    ESP_LOGI(TAG, "in_bpp: %d, fb_bpp: %d, fb_size: %d, mode: %d, width: %d height: %d",
              s_state->in_bytes_per_pixel, s_state->fb_bytes_per_pixel,
              s_state->fb_size, s_state->sampling_mode,
              s_state->width, s_state->height);
 
+    /**
+     * 配置接口
+     */
     i2s_init();
 
     err = dma_desc_init();
@@ -1253,6 +1062,10 @@ esp_err_t camera_init(const camera_config_t* config)
         goto fail;
     }
 
+    /**
+     * 配置vsync中断
+     * 
+     */
     vsync_intr_disable();
     err = gpio_install_isr_service(ESP_INTR_FLAG_LEVEL1 | ESP_INTR_FLAG_IRAM);
     if (err != ESP_OK) {
@@ -1270,37 +1083,37 @@ esp_err_t camera_init(const camera_config_t* config)
         goto fail;
     }
 
-    s_state->sensor.status.framesize = frame_size;
-    s_state->sensor.pixformat = pix_format;
-    ESP_LOGD(TAG, "Setting frame size to %dx%d", s_state->width, s_state->height);
-    if (s_state->sensor.set_framesize(&s_state->sensor, frame_size) != 0) {
-        ESP_LOGE(TAG, "Failed to set frame size");
-        err = ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
-        goto fail;
-    }
-    s_state->sensor.set_pixformat(&s_state->sensor, pix_format);
-
-    if (s_state->sensor.id.PID == OV2640_PID) {
-        s_state->sensor.set_gainceiling(&s_state->sensor, GAINCEILING_2X);
-        s_state->sensor.set_bpc(&s_state->sensor, false);
-        s_state->sensor.set_wpc(&s_state->sensor, true);
-        s_state->sensor.set_lenc(&s_state->sensor, true);
-    }
-
-    if (skip_frame()) {
-        err = ESP_ERR_CAMERA_FAILED_TO_SET_OUT_FORMAT;
-        goto fail;
-    }
-    //todo: for some reason the first set of the quality does not work.
-    if (pix_format == PIXFORMAT_JPEG) {
-        (*s_state->sensor.set_quality)(&s_state->sensor, config->jpeg_quality);
-    }
-    s_state->sensor.init_status(&s_state->sensor);
     return ESP_OK;
 
 fail:
     esp_camera_deinit();
     return err;
+}
+
+static void camera_interface_deinit()
+{
+    if (s_state->dma_filter_task) {
+        vTaskDelete(s_state->dma_filter_task);
+    }
+    if (s_state->data_ready) {
+        vQueueDelete(s_state->data_ready);
+    }
+    if (s_state->fb_in) {
+        vQueueDelete(s_state->fb_in);
+    }
+    if (s_state->fb_out) {
+        vQueueDelete(s_state->fb_out);
+    }
+    if (s_state->frame_ready) {
+        vSemaphoreDelete(s_state->frame_ready);
+    }
+    gpio_isr_handler_remove(s_state->config.pin_vsync);
+    if (s_state->i2s_intr_handle) {
+        esp_intr_disable(s_state->i2s_intr_handle);
+        esp_intr_free(s_state->i2s_intr_handle);
+    }
+    dma_desc_deinit();
+    camera_fb_deinit();
 }
 
 esp_err_t esp_camera_init(const camera_config_t* config)
@@ -1329,11 +1142,70 @@ esp_err_t esp_camera_init(const camera_config_t* config)
         err = ESP_ERR_CAMERA_NOT_SUPPORTED;
         goto fail;
     }
-    err = camera_init(config);
+
+    memcpy(&s_state->config, config, sizeof(camera_config_t));
+
+    switch (s_state->sensor.id.PID) {
+        case OV2640_PID:
+            if (s_state->config.frame_size > FRAMESIZE_UXGA) {
+                s_state->config.frame_size = FRAMESIZE_UXGA;
+            }
+            break;
+        case OV7725_PID:
+            if (s_state->config.frame_size > FRAMESIZE_VGA) {
+                s_state->config.frame_size = FRAMESIZE_VGA;
+            }
+            break;
+        case OV3660_PID:
+            if (s_state->config.frame_size > FRAMESIZE_QXGA) {
+                s_state->config.frame_size = FRAMESIZE_QXGA;
+            }
+            break;
+        case OV5640_PID:
+            if (s_state->config.frame_size > FRAMESIZE_QSXGA) {
+                s_state->config.frame_size = FRAMESIZE_QSXGA;
+            }
+            break;
+        default:
+            return ESP_ERR_CAMERA_NOT_SUPPORTED;
+    }
+
+    err = camera_interface_init(config);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "Camera init failed with error 0x%x", err);
         return err;
     }
+
+    /**
+     * 配置摄像头sensor
+     */
+    s_state->sensor.status.framesize = s_state->config.frame_size;
+    s_state->sensor.pixformat = s_state->config.pixel_format;
+    ESP_LOGD(TAG, "Setting frame size to %dx%d", s_state->width, s_state->height);
+    if (s_state->sensor.set_framesize(&s_state->sensor, s_state->config.frame_size) != 0) {
+        ESP_LOGE(TAG, "Failed to set frame size");
+        err = ESP_ERR_CAMERA_FAILED_TO_SET_FRAME_SIZE;
+        goto fail;
+    }
+    s_state->sensor.set_pixformat(&s_state->sensor, s_state->config.pixel_format);
+
+    if (s_state->sensor.id.PID == OV2640_PID) {
+        s_state->sensor.set_gainceiling(&s_state->sensor, GAINCEILING_2X);
+        s_state->sensor.set_bpc(&s_state->sensor, false);
+        s_state->sensor.set_wpc(&s_state->sensor, true);
+        s_state->sensor.set_lenc(&s_state->sensor, true);
+    }
+
+    if (skip_frame()) {
+        err = ESP_ERR_CAMERA_FAILED_TO_SET_OUT_FORMAT;
+        goto fail;
+    }
+    //todo: for some reason the first set of the quality does not work.
+    if (s_state->config.pixel_format == PIXFORMAT_JPEG) {
+        (*s_state->sensor.set_quality)(&s_state->sensor, config->jpeg_quality);
+    }
+    s_state->sensor.init_status(&s_state->sensor);
+
     return ESP_OK;
 
 fail:
@@ -1348,28 +1220,7 @@ esp_err_t esp_camera_deinit()
     if (s_state == NULL) {
         return ESP_ERR_INVALID_STATE;
     }
-    if (s_state->dma_filter_task) {
-        vTaskDelete(s_state->dma_filter_task);
-    }
-    if (s_state->data_ready) {
-        vQueueDelete(s_state->data_ready);
-    }
-    if (s_state->fb_in) {
-        vQueueDelete(s_state->fb_in);
-    }
-    if (s_state->fb_out) {
-        vQueueDelete(s_state->fb_out);
-    }
-    if (s_state->frame_ready) {
-        vSemaphoreDelete(s_state->frame_ready);
-    }
-    gpio_isr_handler_remove(s_state->config.pin_vsync);
-    if (s_state->i2s_intr_handle) {
-        esp_intr_disable(s_state->i2s_intr_handle);
-        esp_intr_free(s_state->i2s_intr_handle);
-    }
-    dma_desc_deinit();
-    camera_fb_deinit();
+    camera_interface_deinit();
     free(s_state);
     s_state = NULL;
     camera_disable_out_clock();
