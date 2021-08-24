@@ -115,17 +115,17 @@ static void lcd_init(void)
 {
     spi_config_t spi_cfg = {
         .miso_io_num = -1,
-        .mosi_io_num = 15, //txd
-        .sclk_io_num = 14, //rxd
-        .max_transfer_sz = 240 * 240*2+10,
+        .mosi_io_num = 21, //txd
+        .sclk_io_num = 22, //rxd
+        .max_transfer_sz = 240 * 320*2+10,
     };
     spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
     ESP_LOGI(TAG, "lcd_init");
 
     scr_interface_spi_config_t spi_lcd_cfg = {
         .spi_bus = spi_bus,
-        .pin_num_cs = 12,
-        .pin_num_dc = 4,
+        .pin_num_cs = 5,
+        .pin_num_dc = 19,
         .clk_freq = 80000000,
         .swap_data = 0,
     };
@@ -133,18 +133,19 @@ static void lcd_init(void)
     scr_interface_driver_t *iface_drv;
     scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
 
-    scr_controller_config_t lcd_cfg = {0};
-    lcd_cfg.iface_drv = iface_drv;
-    lcd_cfg.pin_num_rst = -1;
-    lcd_cfg.pin_num_bckl = -1;
-    lcd_cfg.rst_active_level = 0;
-    lcd_cfg.bckl_active_level = 1;
-    lcd_cfg.offset_hor=0;
-    lcd_cfg.offset_ver=0;
-    lcd_cfg.width = 240;
-    lcd_cfg.height = 240;
-    lcd_cfg.rotate = SCR_DIR_BTLR;
-    scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
+    scr_controller_config_t lcd_cfg = {
+        .iface_drv = iface_drv,
+        .pin_num_rst = 18,
+        .pin_num_bckl = 23,
+        .rst_active_level = 0,
+        .bckl_active_level = 1,
+        .offset_hor=0,
+        .offset_ver=0,
+        .width = 240,
+        .height = 320,
+        .rotate = SCR_DIR_TBLR,
+    };
+    scr_init(SCREEN_CONTROLLER_ILI9341, &lcd_cfg, &g_lcd);
 
     screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
     screen_clear(COLOR_BLUE);vTaskDelay(500 / portTICK_PERIOD_MS);
@@ -318,7 +319,7 @@ void app_main()
     ESP_ERROR_CHECK(ret);
 
     led_init();
-    app_camera_init();
+    // app_camera_init();
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     fm_mkdir("/sdcard/picture");
     lcd_init();
@@ -339,27 +340,27 @@ void app_main()
     // start_file_server();
 
     // vTaskDelay(pdMS_TO_TICKS(1000));
-    // avi_play("/sdcard/tom-240.avi");
+    avi_play("/sdcard/tom-240.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/taylor.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/Marshmello.avi");
     // avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60*1);
 
-    xTaskCreate(camera_task,
-                "camera_task",
-                4096,
-                NULL,
-                7,
-                &task_handle_camera
-               );
-    xTaskCreate(misc_task,
-                "misc_task",
-                4096,
-                NULL,
-                6,
-                &task_handle_misc
-               );
+    // xTaskCreate(camera_task,
+    //             "camera_task",
+    //             4096,
+    //             NULL,
+    //             7,
+    //             &task_handle_camera
+    //            );
+    // xTaskCreate(misc_task,
+    //             "misc_task",
+    //             4096,
+    //             NULL,
+    //             6,
+    //             &task_handle_misc
+    //            );
     // xTaskCreate(onenet_task,
     //             "onenet_task",
     //             4096,

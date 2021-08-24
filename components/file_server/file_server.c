@@ -312,16 +312,16 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     }
 
     /* File cannot be larger than a limit */
-    if (req->content_len > MAX_FILE_SIZE) {
-        ESP_LOGE(TAG, "File too large : %d bytes", req->content_len);
-        /* Respond with 400 Bad Request */
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-                            "File size must be less than "
-                            MAX_FILE_SIZE_STR "!");
-        /* Return failure to close underlying connection else the
-         * incoming file content will keep the socket busy */
-        return ESP_FAIL;
-    }
+    // if (req->content_len > MAX_FILE_SIZE) {
+    //     ESP_LOGE(TAG, "File too large : %d bytes", req->content_len);
+    //     /* Respond with 400 Bad Request */
+    //     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
+    //                         "File size must be less than "
+    //                         MAX_FILE_SIZE_STR "!");
+    //     /* Return failure to close underlying connection else the
+    //      * incoming file content will keep the socket busy */
+    //     return ESP_FAIL;
+    // }
 
     fd = fopen(filepath, "w");
     if (!fd) {

@@ -67,10 +67,10 @@
             alert("File path on server cannot have spaces!");
         } else if (filePath[filePath.length - 1] == '/') {
             alert("File name not specified after path!");
-        }else if (spl[spl.length-1] != "txt" && spl[spl.length-1] != "jpg") {
-            alert("File type must be jpg or txt!");
-        } else if (fileInput[0].size > 200 * 1024) {
-            alert("File size must be less than 200KB!");
+        // }else if (spl[spl.length-1] != "txt" && spl[spl.length-1] != "jpg") {
+        //     alert("File type must be jpg or txt!");
+        // } else if (fileInput[0].size > 200 * 1024) {
+        //     alert("File size must be less than 200KB!");
         } else {
             document.getElementById("newfile").disabled = true;
             document.getElementById("filepath").disabled = true;
