@@ -23,7 +23,7 @@ static const char *TAG = "sd_card";
 // By default, SDMMC peripheral is used.
 // To enable SPI mode, uncomment the following line:
 
-#define USE_SPI_MODE
+// #define USE_SPI_MODE
 
 // When testing SD and SPI modes, keep in mind that once the card has been
 // initialized in SPI mode, it can not be reinitialized in SD mode without
@@ -46,6 +46,7 @@ esp_err_t app_sdcard_init(void)
 #ifndef USE_SPI_MODE
     ESP_LOGI(TAG, "Using SDMMC peripheral");
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
+    // host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
 
     // This initializes the slot without card detect (CD) and write protect (WP) signals.
     // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.

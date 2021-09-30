@@ -144,8 +144,6 @@
 extern "C" {
 #endif
 
-void app_camera_init();
-
 #ifdef __cplusplus
 }
 #endif
