@@ -63,7 +63,8 @@ bool frame2jpg_cb(camera_fb_t * fb, uint8_t quality, jpg_out_cb cb, void * arg);
  * @param height    Height in pixels of the source image
  * @param format    Format of the source image
  * @param quality   JPEG quality of the resulting image
- * @param out       Pointer to be populated with the address of the resulting buffer
+ * @param out       Pointer to be populated with the address of the resulting buffer.
+ *                  You MUST free the pointer once you are done with it.
  * @param out_len   Pointer to be populated with the length of the output buffer
  *
  * @return true on success
@@ -119,9 +120,6 @@ bool frame2bmp(camera_fb_t * fb, uint8_t ** out, size_t * out_len);
  * @return true on success
  */
 bool fmt2rgb888(const uint8_t *src_buf, size_t src_len, pixformat_t format, uint8_t * rgb_buf);
-
-
-bool jpg2rgb888(const uint8_t *src, size_t src_len, uint8_t * out, jpg_scale_t scale);
 
 bool jpg2rgb565(const uint8_t *src, size_t src_len, uint8_t * out, jpg_scale_t scale);
 

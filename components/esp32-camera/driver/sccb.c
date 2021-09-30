@@ -7,9 +7,11 @@
  *
  */
 #include <stdbool.h>
+#include <string.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include "sccb.h"
+#include "sensor.h"
 #include <stdio.h>
 #include "sdkconfig.h"
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
@@ -19,11 +21,8 @@
 static const char* TAG = "sccb";
 #endif
 
-//#undef CONFIG_SCCB_HARDWARE_I2C
-
 #define LITTLETOBIG(x)          ((x<<8)|(x>>8))
 
-#ifdef CONFIG_SCCB_HARDWARE_I2C
 #include "driver/i2c.h"
 
 #define SCCB_FREQ               100000           /*!< I2C master frequency*/
@@ -38,17 +37,12 @@ const int SCCB_I2C_PORT         = 1;
 #else
 const int SCCB_I2C_PORT         = 0;
 #endif
-static uint8_t ESP_SLAVE_ADDR   = 0x3c;
-#else
-#include "twi.h"
-#endif
 
 int SCCB_Init(int pin_sda, int pin_scl)
 {
-    ESP_LOGI(TAG, "pin_sda %d pin_scl %d\n", pin_sda, pin_scl);
-#ifdef CONFIG_SCCB_HARDWARE_I2C
-    //log_i("SCCB_Init start");
+    ESP_LOGI(TAG, "pin_sda %d pin_scl %d", pin_sda, pin_scl);
     i2c_config_t conf;
+    memset(&conf, 0, sizeof(i2c_config_t));
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = pin_sda;
     conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
@@ -58,17 +52,33 @@ int SCCB_Init(int pin_sda, int pin_scl)
 
     i2c_param_config(SCCB_I2C_PORT, &conf);
     i2c_driver_install(SCCB_I2C_PORT, conf.mode, 0, 0, 0);
-#else
-    twi_init(pin_sda, pin_scl);
-#endif
     return 0;
 }
 
-uint8_t SCCB_Probe()
+int SCCB_Deinit(void)
 {
-#ifdef CONFIG_SCCB_HARDWARE_I2C
+    return i2c_driver_delete(SCCB_I2C_PORT);
+}
+
+uint8_t SCCB_Probe(void)
+{
     uint8_t slave_addr = 0x0;
-    while(slave_addr < 0x7f) {
+    // for (size_t i = 1; i < 0x80; i++) {
+    //     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    //     i2c_master_start(cmd);
+    //     i2c_master_write_byte(cmd, ( i << 1 ) | WRITE_BIT, ACK_CHECK_EN);
+    //     i2c_master_stop(cmd);
+    //     esp_err_t ret = i2c_master_cmd_begin(SCCB_I2C_PORT, cmd, 1000 / portTICK_RATE_MS);
+    //     i2c_cmd_link_delete(cmd);
+    //     if( ret == ESP_OK) {
+    //         ESP_LOGW(TAG, "Found I2C Device at 0x%02X", i);
+    //     }
+    // }
+    for (size_t i = 0; i < CAMERA_MODEL_MAX; i++) {
+        if (slave_addr == camera_sensor[i].sccb_addr) {
+            continue;
+        }
+        slave_addr = camera_sensor[i].sccb_addr;
         i2c_cmd_handle_t cmd = i2c_cmd_link_create();
         i2c_master_start(cmd);
         i2c_master_write_byte(cmd, ( slave_addr << 1 ) | WRITE_BIT, ACK_CHECK_EN);
@@ -76,34 +86,14 @@ uint8_t SCCB_Probe()
         esp_err_t ret = i2c_master_cmd_begin(SCCB_I2C_PORT, cmd, 1000 / portTICK_RATE_MS);
         i2c_cmd_link_delete(cmd);
         if( ret == ESP_OK) {
-            ESP_SLAVE_ADDR = slave_addr;
-            return ESP_SLAVE_ADDR;
-        }
-        slave_addr++;
-    }
-    return ESP_SLAVE_ADDR;
-#else
-    uint8_t reg = 0x00;
-    uint8_t slv_addr = 0x00;
-
-    ESP_LOGI(TAG, "SCCB_Probe start");
-    for (uint8_t i = 0; i < 127; i++) {
-        if (twi_writeTo(i, &reg, 1, true) == 0) {
-            slv_addr = i;
-            break;
-        }
-
-        if (i!=126) {
-            vTaskDelay(10 / portTICK_PERIOD_MS); // Necessary for OV7725 camera (not for OV2640).
+            return slave_addr;
         }
     }
-    return slv_addr;
-#endif
+    return 0;
 }
 
 uint8_t SCCB_Read(uint8_t slv_addr, uint8_t reg)
 {
-#ifdef CONFIG_SCCB_HARDWARE_I2C
     uint8_t data=0;
     esp_err_t ret = ESP_FAIL;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
@@ -125,28 +115,10 @@ uint8_t SCCB_Read(uint8_t slv_addr, uint8_t reg)
         ESP_LOGE(TAG, "SCCB_Read Failed addr:0x%02x, reg:0x%02x, data:0x%02x, ret:%d", slv_addr, reg, data, ret);
     }
     return data;
-#else
-    uint8_t data=0;
-
-    int rc = twi_writeTo(slv_addr, &reg, 1, true);
-    if (rc != 0) {
-        data = 0xff;
-    } else {
-        rc = twi_readFrom(slv_addr, &data, 1, true);
-        if (rc != 0) {
-            data=0xFF;
-        }
-    }
-    if (rc != 0) {
-        ESP_LOGE(TAG, "SCCB_Read [%02x] failed rc=%d\n", reg, rc);
-    }
-    return data;
-#endif
 }
 
 uint8_t SCCB_Write(uint8_t slv_addr, uint8_t reg, uint8_t data)
 {
-#ifdef CONFIG_SCCB_HARDWARE_I2C
     esp_err_t ret = ESP_FAIL;
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
@@ -160,23 +132,10 @@ uint8_t SCCB_Write(uint8_t slv_addr, uint8_t reg, uint8_t data)
         ESP_LOGE(TAG, "SCCB_Write Failed addr:0x%02x, reg:0x%02x, data:0x%02x, ret:%d", slv_addr, reg, data, ret);
     }
     return ret == ESP_OK ? 0 : -1;
-#else
-    uint8_t ret=0;
-    uint8_t buf[] = {reg, data};
-
-    if(twi_writeTo(slv_addr, buf, 2, true) != 0) {
-        ret=0xFF;
-    }
-    if (ret != 0) {
-        ESP_LOGE(TAG, "SCCB_Write [%02x]=%02x failed\n", reg, data);
-    }
-    return ret;
-#endif
 }
 
 uint8_t SCCB_Read16(uint8_t slv_addr, uint16_t reg)
 {
-#ifdef CONFIG_SCCB_HARDWARE_I2C
     uint8_t data=0;
     esp_err_t ret = ESP_FAIL;
     uint16_t reg_htons = LITTLETOBIG(reg);
@@ -201,32 +160,11 @@ uint8_t SCCB_Read16(uint8_t slv_addr, uint16_t reg)
         ESP_LOGE(TAG, "W [%04x]=%02x fail\n", reg, data);
     }
     return data;
-#else
-    uint8_t data=0;
-    uint16_t reg_htons = LITTLETOBIG(reg);
-    uint8_t *reg_u8 = (uint8_t *)&reg_htons;
-    uint8_t buf[] = {reg_u8[0], reg_u8[1]};
-
-    int rc = twi_writeTo(slv_addr, buf, 2, true);
-    if (rc != 0) {
-        data = 0xff;
-    } else {
-        rc = twi_readFrom(slv_addr, &data, 1, true);
-        if (rc != 0) {
-            data=0xFF;
-        }
-    }
-    if (rc != 0) {
-        ESP_LOGE(TAG, "R [%04x] fail rc=%d\n", reg, rc);
-    }
-    return data;
-#endif
 }
 
 uint8_t SCCB_Write16(uint8_t slv_addr, uint16_t reg, uint8_t data)
 {
     static uint16_t i = 0;
-#ifdef CONFIG_SCCB_HARDWARE_I2C
     esp_err_t ret = ESP_FAIL;
     uint16_t reg_htons = LITTLETOBIG(reg);
     uint8_t *reg_u8 = (uint8_t *)&reg_htons;
@@ -243,18 +181,4 @@ uint8_t SCCB_Write16(uint8_t slv_addr, uint16_t reg, uint8_t data)
         ESP_LOGE(TAG, "W [%04x]=%02x %d fail\n", reg, data, i++);
     }
     return ret == ESP_OK ? 0 : -1;
-#else
-    uint8_t ret=0;
-    uint16_t reg_htons = LITTLETOBIG(reg);
-    uint8_t *reg_u8 = (uint8_t *)&reg_htons;
-    uint8_t buf[] = {reg_u8[0], reg_u8[1], data};
-
-    if(twi_writeTo(slv_addr, buf, 3, true) != 0) {
-        ret = 0xFF;
-    }
-    if (ret != 0) {
-        ESP_LOGE(TAG, "W [%04x]=%02x %d fail\n", reg, data, i++);
-    }
-    return ret;
-#endif
 }
