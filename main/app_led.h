@@ -8,13 +8,17 @@
 #ifndef MAIN_LED_H_
 #define MAIN_LED_H_
 
+#include "driver/gpio.h"
 
 #ifdef __cplusplus 
 extern "C" {
 #endif
 
-void led_init() ;
-void led_flash_set(uint8_t times);
+uint8_t _led_seq_1[2];
+uint8_t _led_seq_2[4];
+
+void led_init(gpio_num_t led_gpio);
+void led_set_seq(uint8_t seq_50ms[], uint8_t len);
 bool get_light_state(void) ;
 
 void led_sethigh(void);
