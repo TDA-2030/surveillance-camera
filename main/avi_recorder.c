@@ -19,6 +19,7 @@ typedef struct {
     const char *fname;
     framesize_t rec_size;
     uint32_t rec_time;
+    EventGroupHandle_t event_hdl;
 } recorder_param_t;
 
 typedef struct {
@@ -50,7 +51,7 @@ static int jpeg2avi_start(jpeg2avi_data_t *j2a, const char *filename)
         return ESP_ERR_INVALID_ARG;
     }
 
-    j2a->buf_len = 8 * 1024;
+    j2a->buf_len = 8 * 1024 + sizeof(AVI_CHUNK_HEAD);
     j2a->buffer = heap_caps_malloc(j2a->buf_len, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (NULL == j2a->buffer) {
         ESP_LOGE(TAG, "recorder mem failed");
@@ -101,11 +102,10 @@ static int jpeg2avi_add_frame(jpeg2avi_data_t *j2a, uint8_t *data, uint32_t len)
     int ret;
     AVI_CHUNK_HEAD frame_head;
     uint32_t align_size = MEM_ALIGN_SIZE(len);/*JPEG图像大小4字节对齐*/
-    const int CHUNK_SIZE = 4096;
+    const int CHUNK_SIZE = 1024 * 8;
 
     frame_head.FourCC = MAKE_FOURCC('0', '0', 'd', 'c'); //00dc = 压缩的视频数据
     frame_head.size = align_size;
-    uint64_t t_s = esp_timer_get_time();
 
     uint32_t remain = j2a->write_len + align_size + sizeof(AVI_CHUNK_HEAD);
     uint32_t last_remain = j2a->write_len;
@@ -119,7 +119,6 @@ static int jpeg2avi_add_frame(jpeg2avi_data_t *j2a, uint8_t *data, uint32_t len)
             j2a->write_len += _len;
             data += _len;
             ret = write(j2a->avifile, j2a->buffer, j2a->write_len);
-            printf("l=%d\n", j2a->write_len);
             remain -= j2a->write_len;
             j2a->write_len = 0;
             if (remain >= CHUNK_SIZE) {
@@ -127,7 +126,6 @@ static int jpeg2avi_add_frame(jpeg2avi_data_t *j2a, uint8_t *data, uint32_t len)
                 int count = remain / CHUNK_SIZE;
                 for (size_t i = 0; i < count; i++) {
                     ret = write(j2a->avifile, data, CHUNK_SIZE);
-                    printf("lc=%d\n", CHUNK_SIZE);
                     data += CHUNK_SIZE;
                     remain -= CHUNK_SIZE;
                 }
@@ -143,17 +141,14 @@ static int jpeg2avi_add_frame(jpeg2avi_data_t *j2a, uint8_t *data, uint32_t len)
             remain = 0;
         }
     }
-    /*将4字节对齐后的JPEG图像大小保存*/
-    write(j2a->idxfile, &align_size, 4);
-    uint64_t t_e = esp_timer_get_time();
-    printf("ts=%d, t=%d\n", align_size, (uint32_t)(t_e - t_s));
 
+    write(j2a->idxfile, &align_size, 4);/*将4字节对齐后的JPEG图像大小保存*/
     j2a->nframes += 1;
     j2a->totalsize += align_size;
     return ESP_OK;
 }
 
-static int back_fill_data(jpeg2avi_data_t *j2a, uint32_t width, uint32_t height, uint32_t fps)
+static int jpeg2avi_write_header(jpeg2avi_data_t *j2a, uint32_t width, uint32_t height, uint32_t fps)
 {
     size_t ret;
 
@@ -237,14 +232,11 @@ static int back_fill_data(jpeg2avi_data_t *j2a, uint32_t width, uint32_t height,
     write(j2a->avifile, &riff_head, sizeof(AVI_LIST_HEAD));
     write(j2a->avifile, &hdrl_list, sizeof(AVI_HDRL_LIST));
     ret = write(j2a->avifile, &movi_list_head, sizeof(AVI_LIST_HEAD));
-    // if (sizeof(AVI_LIST_HEAD) != ret) {
-    //     ESP_LOGE(TAG, "avi head list write failed");
-    //     return ESP_FAIL;
-    // }
+
     return ESP_OK;
 }
 
-static int write_index_chunk(jpeg2avi_data_t *j2a)
+static int jpeg2avi_write_index_chunk(jpeg2avi_data_t *j2a)
 {
     size_t ret;
     size_t i;
@@ -254,13 +246,8 @@ static int write_index_chunk(jpeg2avi_data_t *j2a)
     uint32_t frame_size;
     AVI_IDX1 idx;
 
-    j2a->idxfile = open(j2a->filename, O_RDWR);
-    if (j2a->idxfile == -1)  {
-        ESP_LOGE(TAG, "%d:Could not open %s. discard the idx1 chunk", __LINE__, j2a->filename);
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "frame number=%d", j2a->nframes);
+    lseek(j2a->idxfile, 0, SEEK_SET);
+    ESP_LOGI(TAG, "frame number=%d, size=%dKB", j2a->nframes, j2a->totalsize / 1024);
     write(j2a->avifile, &index, 4);
     write(j2a->avifile, &index_chunk_size, 4);
 
@@ -287,18 +274,13 @@ static int write_index_chunk(jpeg2avi_data_t *j2a)
 static void jpeg2avi_end(jpeg2avi_data_t *j2a, int width, int height, int fps)
 {
     ESP_LOGI(TAG, "video info: width=%d | height=%d | fps=%d", width, height, fps);
-    close(j2a->idxfile);
     if (j2a->write_len) { // 如果缓存区有数据，则全写到文件
         int ret = write(j2a->avifile, j2a->buffer, j2a->write_len);
     }
 
-    //写索引块
-    write_index_chunk(j2a);
-
-    //从文件头开始，回填各块数据
-    back_fill_data(j2a, width, height, fps);
+    jpeg2avi_write_index_chunk(j2a);//写索引块
+    jpeg2avi_write_header(j2a, width, height, fps);//从文件头开始，回填各块数据
     close(j2a->avifile);
-
     free(j2a->buffer);
 
     ESP_LOGI(TAG, "avi recording completed");
@@ -351,10 +333,11 @@ static void recorder_task(void *args)
     jpeg2avi_end(&avi_recoder, resolution[rec_arg->rec_size].width, resolution[rec_arg->rec_size].height, fps);
     g_state = REC_STATE_IDLE;
     g_force_end = 0;
+    xEventGroupSetBits(rec_arg->event_hdl, BIT2);
     vTaskDelete(NULL);
 }
 
-void avi_recorder_start(const char *fname, framesize_t rec_size, uint32_t rec_time)
+void avi_recorder_start(const char *fname, framesize_t rec_size, uint32_t rec_time, bool block)
 {
     if (REC_STATE_IDLE != g_state) {
         ESP_LOGE(TAG, "recorder already running");
@@ -365,9 +348,14 @@ void avi_recorder_start(const char *fname, framesize_t rec_size, uint32_t rec_ti
     rec_arg.fname = fname;
     rec_arg.rec_size = rec_size;
     rec_arg.rec_time = rec_time;
+    rec_arg.event_hdl = xEventGroupCreate();
 
     xTaskCreatePinnedToCore(recorder_task, "recorder", 1024 * 4, &rec_arg, configMAX_PRIORITIES - 2, NULL, 1);
 
+    if (block) {
+        xEventGroupWaitBits(rec_arg.event_hdl, BIT2, pdTRUE, pdTRUE, portMAX_DELAY);
+    }
+    vEventGroupDelete(rec_arg.event_hdl);
     g_state = REC_STATE_BUSY;
 }
 

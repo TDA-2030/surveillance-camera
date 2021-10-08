@@ -28,8 +28,6 @@
 #include "esp_wifi.h"
 #include "nvs_flash.h"
 
-#include "onenet.h"
-#include "mqttkit.h"
 #include "app_main.h"
 #include "app_sntp.h"
 #include "app_camera.h"
@@ -100,11 +98,12 @@ static esp_err_t camera_init(uint32_t xclk_freq_hz, pixformat_t pixel_format, fr
 
     //initialize the camera
     esp_err_t ret = esp_camera_init(&camera_config);
-
+    sensor_t *s = esp_camera_sensor_get();
     if (ESP_OK == ret && PIXFORMAT_JPEG == pixel_format && FRAMESIZE_SVGA > size_bak) {
-        sensor_t *s = esp_camera_sensor_get();
+
         s->set_framesize(s, size_bak);
     }
+    s->set_vflip(s, 1);
 
     return ret;
 }
@@ -181,45 +180,45 @@ static void screen_clear(int color)
     }
 }
 
-static void lcd_init(void)
-{
-    spi_config_t spi_cfg = {
-        .miso_io_num = -1,
-        .mosi_io_num = 15, //txd
-        .sclk_io_num = 14, //rxd
-        .max_transfer_sz = 240 * 240 * 2 + 10,
-    };
-    spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
-    ESP_LOGI(TAG, "lcd_init");
+// static void lcd_init(void)
+// {
+//     spi_config_t spi_cfg = {
+//         .miso_io_num = -1,
+//         .mosi_io_num = 15, //txd
+//         .sclk_io_num = 14, //rxd
+//         .max_transfer_sz = 240 * 240 * 2 + 10,
+//     };
+//     spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
+//     ESP_LOGI(TAG, "lcd_init");
 
-    scr_interface_spi_config_t spi_lcd_cfg = {
-        .spi_bus = spi_bus,
-        .pin_num_cs = 12,
-        .pin_num_dc = 4,
-        .clk_freq = 80000000,
-        .swap_data = 0,
-    };
+//     scr_interface_spi_config_t spi_lcd_cfg = {
+//         .spi_bus = spi_bus,
+//         .pin_num_cs = 12,
+//         .pin_num_dc = 4,
+//         .clk_freq = 80000000,
+//         .swap_data = 0,
+//     };
 
-    scr_interface_driver_t *iface_drv;
-    scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
+//     scr_interface_driver_t *iface_drv;
+//     scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
 
-    scr_controller_config_t lcd_cfg = {0};
-    lcd_cfg.iface_drv = iface_drv;
-    lcd_cfg.pin_num_rst = -1;
-    lcd_cfg.pin_num_bckl = -1;
-    lcd_cfg.rst_active_level = 0;
-    lcd_cfg.bckl_active_level = 1;
-    lcd_cfg.offset_hor = 0;
-    lcd_cfg.offset_ver = 0;
-    lcd_cfg.width = 240;
-    lcd_cfg.height = 240;
-    lcd_cfg.rotate = SCR_DIR_BTLR;
-    scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
+//     scr_controller_config_t lcd_cfg = {0};
+//     lcd_cfg.iface_drv = iface_drv;
+//     lcd_cfg.pin_num_rst = -1;
+//     lcd_cfg.pin_num_bckl = -1;
+//     lcd_cfg.rst_active_level = 0;
+//     lcd_cfg.bckl_active_level = 1;
+//     lcd_cfg.offset_hor = 0;
+//     lcd_cfg.offset_ver = 0;
+//     lcd_cfg.width = 240;
+//     lcd_cfg.height = 240;
+//     lcd_cfg.rotate = SCR_DIR_BTLR;
+//     scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
 
-    screen_clear(COLOR_ESP_BKGD); vTaskDelay(500 / portTICK_PERIOD_MS);
-    screen_clear(COLOR_BLUE); vTaskDelay(500 / portTICK_PERIOD_MS);
-    screen_clear(COLOR_RED); vTaskDelay(500 / portTICK_PERIOD_MS);
-}
+//     screen_clear(COLOR_ESP_BKGD); vTaskDelay(500 / portTICK_PERIOD_MS);
+//     screen_clear(COLOR_BLUE); vTaskDelay(500 / portTICK_PERIOD_MS);
+//     screen_clear(COLOR_RED); vTaskDelay(500 / portTICK_PERIOD_MS);
+// }
 
 
 static void camera_task(void *arg)
@@ -252,7 +251,7 @@ static void camera_task(void *arg)
             continue;
         }
         if (image_fb->format == PIXFORMAT_JPEG) {
-           
+
             jpg2rgb565((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888, JPG_SCALE_NONE);
 
             char strftime_buf[64];
@@ -273,26 +272,10 @@ static void camera_task(void *arg)
     }
 }
 
-static void misc_task(void *arg)
-{
-    led_flash_set(1);
-    while (1) {
-        if (SYS_STATUS_GET(SYS_STATUS_CONNECTED)) {
-            if (ONENET_NET_STATUS_CONNECT_PLATFORM == onenet_info.status) {
-                led_flash_set(3);
-            } else {
-                led_flash_set(2);
-            }
-        } else {
-            led_flash_set(1);
-        }
 
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
-}
 esp_err_t WR_test(const char *path, const size_t length, float *out_read_speed, float *out_write_speed)
 {
-    const size_t block_size = 1024*4;
+    const size_t block_size = 1024 * 4;
 
     char filename[64] = {0};
     strcat(filename, path);
@@ -311,20 +294,31 @@ esp_err_t WR_test(const char *path, const size_t length, float *out_read_speed, 
         ESP_LOGE(TAG, "Failed to malloc");
         return ESP_FAIL;
     }
-    for (size_t i = 0; i < block_size; i++)
-    {
-        data_buf[i]=esp_random()>>24;
+    for (size_t i = 0; i < block_size; i++) {
+        data_buf[i] = esp_random() >> 24;
     }
-    
+
 
     int64_t w_start = esp_timer_get_time();
     static int64_t w_t;
     size_t remain = length;
 
+    // while (remain) {
+    //     int wl = remain >= block_size ? block_size : remain;
+    //     int res = write(f, data_buf, wl);
+    //     remain -= res;
+    // }
+    remain = 160;
     while (remain) {
-        int wl = remain >= block_size ? block_size : remain;
-        int res = write(f, data_buf, wl);
-        remain -= res;
+        // camera_fb_t *image_fb = esp_camera_fb_get();
+        vTaskDelay(pdMS_TO_TICKS(40));
+        write(f, data_buf, 8 * 1024);
+        write(f, data_buf, 8 * 1024);
+        // write(f, data_buf, 4*1024);
+        // write(f, data_buf, 4*1024);
+
+        // esp_camera_fb_return(image_fb);
+        remain --;
     }
     w_t = esp_timer_get_time() - w_start;
     printf("t=%llu\n", w_t);
@@ -380,20 +374,21 @@ void app_main()
     }
     ESP_ERROR_CHECK(ret);
 
-    led_init();
+    led_init(3);
+    led_set_seq(_led_seq_1, sizeof(_led_seq_1));
     camera_init(20000000, PIXFORMAT_JPEG, FRAMESIZE_VGA, 3);
     ESP_LOGI(TAG, "fps=%f", _camera_test_fps(16));
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     // fm_mkdir("/sdcard/picture");
     // lcd_init();
-    xTaskCreate(misc_task, "misc_task", 4096, NULL, 6, &task_handle_misc);
+    // xTaskCreate(misc_task, "misc_task", 4096, NULL, 6, &task_handle_misc);
 
     // esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
     // float ws;
     // float rs;
     // printf("| 次数 |       写      |       读      |\n");
-    // for (size_t i = 0; i < 5; i++) {
-    //     WR_test("/sdcard", 2 * 1024 * 1024, &rs, &ws);
+    // for (size_t i = 0; i < 1; i++) {
+    //     WR_test("/sdcard", 3 * 1024 * 1024, &rs, &ws);
     //     printf( "|  %d   |  %fMB/s |  %fMB/s |\n", i, ws, rs);
     // }
     // esp_task_wdt_add(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
@@ -416,17 +411,8 @@ void app_main()
 
     vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/tom-240.avi");
-    avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_VGA, 10*1);
-
-    // xTaskCreate(camera_task,
-    //             "camera_task",
-    //             4096,
-    //             NULL,
-    //             7,
-    //             &task_handle_camera
-    //            );
+    led_set_seq(_led_seq_2, 4);
+    avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_VGA, 10 * 3, 1);
+    led_set_seq(_led_seq_1, sizeof(_led_seq_1));
 
 }
-
-
-

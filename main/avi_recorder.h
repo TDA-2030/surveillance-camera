@@ -8,7 +8,7 @@
 extern "C" {
 #endif
 
-void avi_recorder_start(const char *fname, framesize_t rec_size, uint32_t rec_time);
+void avi_recorder_start(const char *fname, framesize_t rec_size, uint32_t rec_time, bool block);
 
 void avi_recorder_stop(void);
 

@@ -51,7 +51,26 @@ esp_err_t app_sdcard_init(void)
     // This initializes the slot without card detect (CD) and write protect (WP) signals.
     // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
+#ifdef CONFIG_CAMERA_MODULE_ESP_S3_EYE
+    // To use 1-line SD mode, change this to 1:
+    slot_config.width = 1;
 
+    // On chips where the GPIOs used for SD card can be configured, set them in
+    // the slot_config structure:
+#ifdef SOC_SDMMC_USE_GPIO_MATRIX
+    slot_config.clk = 39;
+    slot_config.cmd = 38;
+    slot_config.d0 = 40;
+    slot_config.d1 = -1;
+    slot_config.d2 = -1;
+    slot_config.d3 = -1;
+#endif
+
+    // Enable internal pullups on enabled pins. The internal pullups
+    // are insufficient however, please make sure 10k external pullups are
+    // connected on the bus. This is for debug / example purpose only.
+    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
+#else
     // To use 1-line SD mode, uncomment the following line:
     // slot_config.width = 1;
 
@@ -63,7 +82,7 @@ esp_err_t app_sdcard_init(void)
     gpio_set_pull_mode(4, GPIO_PULLUP_ONLY);    // D1, needed in 4-line mode only
     gpio_set_pull_mode(12, GPIO_PULLUP_ONLY);   // D2, needed in 4-line mode only
     gpio_set_pull_mode(13, GPIO_PULLUP_ONLY);   // D3, needed in 4- and 1-line modes
-
+#endif
 #else
     ESP_LOGI(TAG, "Using SPI peripheral");
 
@@ -90,16 +109,16 @@ esp_err_t app_sdcard_init(void)
     // Note: esp_vfs_fat_sdmmc_mount is an all-in-one convenience function.
     // Please check its source code and implement error recovery when developing
     // production applications.
-    sdmmc_card_t* card;
+    sdmmc_card_t *card;
     esp_err_t ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
 
     if (ret != ESP_OK) {
         if (ret == ESP_FAIL) {
             ESP_LOGE(TAG, "Failed to mount filesystem. "
-                "If you want the card to be formatted, set format_if_mount_failed = true.");
+                     "If you want the card to be formatted, set format_if_mount_failed = true.");
         } else {
             ESP_LOGE(TAG, "Failed to initialize the card (%s). "
-                "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
+                     "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
         }
         return ESP_FAIL;
     }
