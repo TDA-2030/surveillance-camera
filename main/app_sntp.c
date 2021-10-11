@@ -16,10 +16,14 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_attr.h"
+#include "esp_sleep.h"
+#include "nvs_flash.h"
 #include "esp_sntp.h"
 
 static const char *TAG = "sntp";
 
+static void obtain_time(void);
+static void initialize_sntp(void);
 
 #ifdef CONFIG_SNTP_TIME_SYNC_METHOD_CUSTOM
 void sntp_sync_time(struct timeval *tv)
@@ -32,65 +36,28 @@ void sntp_sync_time(struct timeval *tv)
 
 static void time_sync_notification_cb(struct timeval *tv)
 {
-    ESP_LOGI(TAG, "Notification of a time synchronization event");
+    ESP_LOGI(TAG, "Notification of a time synchronization event, sec=%lu", tv->tv_sec);
+    settimeofday(tv, NULL);
 }
 
-static void initialize_sntp(void)
-{
-    ESP_LOGI(TAG, "Initializing SNTP");
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, "ntp.aliyun.com");
-    sntp_setservername(1, "pool.ntp.org");
-    sntp_setservername(2, "ntp.ntsc.ac.cn");
-    sntp_set_time_sync_notification_cb(time_sync_notification_cb);
-#ifdef CONFIG_SNTP_TIME_SYNC_METHOD_SMOOTH
-    sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
-#endif
-    sntp_init();
-}
-
-static void obtain_time(void)
-{
-    initialize_sntp();
-
-    // wait for time to be set
-    time_t now = 0;
-    struct tm timeinfo = {0};
-    int retry = 0;
-    const int retry_count = 10;
-    while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count)
-    {
-        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
-    }
-    time(&now);
-    localtime_r(&now, &timeinfo);
-}
-
-void app_sntp_get_time(struct tm *timeinfo)
-{
-    time_t now;
-    time(&now);
-    localtime_r(&now, timeinfo);
-}
-
-void app_sntp_start(void)
+void app_sntp_init(void)
 {
     time_t now;
     struct tm timeinfo;
     time(&now);
     localtime_r(&now, &timeinfo);
+    // Set timezone to China Standard Time
+    setenv("TZ", "CST-8", 1);
+    tzset();
     // Is time set? If not, tm_year will be (1970 - 1900).
-    if (timeinfo.tm_year < (2016 - 1900))
-    {
+    if (timeinfo.tm_year < (2016 - 1900)) {
         ESP_LOGI(TAG, "Time is not set yet. Connecting to WiFi and getting time over NTP.");
         obtain_time();
         // update 'now' variable with current time
         time(&now);
     }
 #ifdef CONFIG_SNTP_TIME_SYNC_METHOD_SMOOTH
-    else
-    {
+    else {
         // add 500 ms error to the current system time.
         // Only to demonstrate a work of adjusting method!
         {
@@ -99,7 +66,7 @@ void app_sntp_start(void)
             gettimeofday(&tv_now, NULL);
             int64_t cpu_time = (int64_t)tv_now.tv_sec * 1000000L + (int64_t)tv_now.tv_usec;
             int64_t error_time = cpu_time + 500 * 1000L;
-            struct timeval tv_error = {.tv_sec = error_time / 1000000L, .tv_usec = error_time % 1000000L};
+            struct timeval tv_error = { .tv_sec = error_time / 1000000L, .tv_usec = error_time % 1000000L };
             settimeofday(&tv_error, NULL);
         }
 
@@ -111,34 +78,52 @@ void app_sntp_start(void)
 #endif
 
     char strftime_buf[64];
-
-    // Set timezone to Eastern Standard Time and print local time
-    setenv("TZ", "EST5EDT,M3.2.0/2,M11.1.0", 1);
-    tzset();
-    localtime_r(&now, &timeinfo);
-    strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
-    ESP_LOGI(TAG, "The current date/time in New York is: %s", strftime_buf);
-
-    // Set timezone to China Standard Time
-    setenv("TZ", "CST-8", 1);
-    tzset();
     localtime_r(&now, &timeinfo);
     strftime(strftime_buf, sizeof(strftime_buf), "%c", &timeinfo);
     ESP_LOGI(TAG, "The current date/time in Shanghai is: %s", strftime_buf);
 
-    if (sntp_get_sync_mode() == SNTP_SYNC_MODE_SMOOTH)
-    {
+    if (sntp_get_sync_mode() == SNTP_SYNC_MODE_SMOOTH) {
         struct timeval outdelta;
-        while (sntp_get_sync_status() == SNTP_SYNC_STATUS_IN_PROGRESS)
-        {
+        while (sntp_get_sync_status() == SNTP_SYNC_STATUS_IN_PROGRESS) {
             adjtime(NULL, &outdelta);
             ESP_LOGI(TAG, "Waiting for adjusting time ... outdelta = %li sec: %li ms: %li us",
-                     outdelta.tv_sec,
+                     (long)outdelta.tv_sec,
                      outdelta.tv_usec / 1000,
                      outdelta.tv_usec % 1000);
-            vTaskDelay(2000 / portTICK_PERIOD_MS);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
     }
 }
 
+static void obtain_time(void)
+{
 
+    initialize_sntp();
+
+    // wait for time to be set
+    time_t now = 0;
+    struct tm timeinfo = { 0 };
+    int retry = 0;
+    const int retry_count = 10;
+    while (sntp_get_sync_status() == SNTP_SYNC_STATUS_RESET && ++retry < retry_count) {
+        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+    }
+    time(&now);
+    localtime_r(&now, &timeinfo);
+
+}
+
+static void initialize_sntp(void)
+{
+    ESP_LOGI(TAG, "Initializing SNTP");
+    sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    sntp_setservername(0, "ntp.aliyun.com");
+    sntp_setservername(1, "time.asia.apple.com");
+    sntp_setservername(2, "pool.ntp.org");
+    sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+#ifdef CONFIG_SNTP_TIME_SYNC_METHOD_SMOOTH
+    sntp_set_sync_mode(SNTP_SYNC_MODE_SMOOTH);
+#endif
+    sntp_init();
+}

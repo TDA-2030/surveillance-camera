@@ -2,6 +2,7 @@
 idf_component_register(SRCS avifile.c
                             vidoplayer.c
                             mjpeg.c
+                            avi_recorder.c
                             jpeg-9a/jaricom.c
                             jpeg-9a/jcomapi.c
                             jpeg-9a/jutils.c
@@ -29,4 +30,4 @@ idf_component_register(SRCS avifile.c
                             jpeg-9a/jidctflt.c
                             jpeg-9a/jidctfst.c
                        INCLUDE_DIRS . jpeg-9a
-                       REQUIRES file_server screen esp32-camera pwm_audio)
+                       REQUIRES screen pwm_audio)

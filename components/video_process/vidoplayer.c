@@ -1,10 +1,15 @@
 #include <stdio.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <errno.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
-#include "esp_err.h"
-#include "file_manage.h"
+// #include "file_manage.h"
 #include "pwm_audio.h"
 #include "avifile.h"
 #include "vidoplayer.h"
@@ -25,9 +30,10 @@ static const char *TAG = "avi player";
 
 extern AVI_TypeDef AVI_file;
 
-static uint32_t _REV(uint32_t value){
-    return (value & 0x000000FFU) << 24 | (value & 0x0000FF00U) << 8 | 
-        (value & 0x00FF0000U) >> 8 | (value & 0xFF000000U) >> 24; 
+static uint32_t _REV(uint32_t value)
+{
+    return (value & 0x000000FFU) << 24 | (value & 0x0000FF00U) << 8 |
+           (value & 0x00FF0000U) >> 8 | (value & 0xFF000000U) >> 24;
 }
 
 static void audio_init(void)
@@ -62,19 +68,17 @@ static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t length, uint32_
         ESP_LOGE(TAG, "frame size too large");
         return 0;
     }
-    
+
     uint32_t ret = fread(buffer, head.size, 1, file);
     return head.size;
 }
 
-#include "esp_camera.h"
 #include "screen_driver.h"
 extern scr_driver_t g_lcd;
 
 static void audio_task(void *args)
 {
-    while (1)
-    {
+    while (1) {
         /* code */
     }
     vTaskDelete(NULL);
@@ -82,8 +86,7 @@ static void audio_task(void *args)
 
 static void video_task(void *args)
 {
-    while (1)
-    {
+    while (1) {
         /* code */
     }
     vTaskDelete(NULL);
@@ -97,7 +100,7 @@ void avi_play(const char *filename)
     uint32_t  Strsize;
     uint32_t  Strtype;
     uint8_t *pbuffer;
-    uint32_t buffer_size = 22*1024;
+    uint32_t buffer_size = 22 * 1024;
 
     avi_file = fopen(filename, "rb");
     if (avi_file == NULL) {
@@ -118,23 +121,22 @@ void avi_play(const char *filename)
         ESP_LOGE(TAG, "parse failed (%d)", ret);
         return;
     }
-    
+
     audio_init();
     pwm_audio_set_param(AVI_file.auds_sample_rate, AVI_file.auds_bits, AVI_file.auds_channels);
     pwm_audio_start();
 
     uint16_t img_width = AVI_file.vids_width;
     uint16_t img_height = AVI_file.vids_height;
-    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*2, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
-    if (NULL == img_rgb888)
-    {
+    uint8_t *img_rgb888 = heap_caps_malloc(img_width * img_height * 2, MALLOC_CAP_8BIT | MALLOC_CAP_INTERNAL);
+    if (NULL == img_rgb888) {
         ESP_LOGE(TAG, "malloc for rgb888 failed");
         goto EXIT;
     }
 
     fseek(avi_file, AVI_file.movi_start, SEEK_SET); // 偏移到movi list
     Strsize = read_frame(avi_file, pbuffer, buffer_size, &Strtype);
-    BytesRD = Strsize+8;
+    BytesRD = Strsize + 8;
 
     while (1) { //播放循环
         if (BytesRD >= AVI_file.movi_size) {
@@ -144,10 +146,10 @@ void avi_play(const char *filename)
         if (Strtype == T_vids) { //显示帧
             int64_t fr_end = esp_timer_get_time();
             mjpegdraw(pbuffer, Strsize, img_rgb888);
-            
+
             // jpg2rgb565((const uint8_t *)pbuffer, Strsize, img_rgb888, JPG_SCALE_NONE);
-            ESP_LOGI(TAG, "jpg decode %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
-    
+            ESP_LOGI(TAG, "jpg decode %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000)); fr_end = esp_timer_get_time();
+
             g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
             // ESP_LOGI(TAG, "draw %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
 
@@ -162,11 +164,11 @@ void avi_play(const char *filename)
         }
         Strsize = read_frame(avi_file, pbuffer, buffer_size, &Strtype); //读入整帧
         ESP_LOGD(TAG, "type=%x, size=%d", Strtype, Strsize);
-        BytesRD += Strsize+8;
+        BytesRD += Strsize + 8;
     }
 EXIT:
-pwm_audio_deinit();
-free(img_rgb888);
+    pwm_audio_deinit();
+    free(img_rgb888);
     free(pbuffer);
     fclose(avi_file);
 }

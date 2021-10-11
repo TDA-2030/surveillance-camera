@@ -16,7 +16,11 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-
+#include "esp_ota_ops.h"
+#include "esp_flash_partitions.h"
+#include "esp_partition.h"
+#include "lwip/apps/netbiosns.h"
+#include "mdns.h"
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
 #include "esp_http_server.h"
@@ -31,7 +35,7 @@
 #define MAX_FILE_SIZE_STR "200KB"
 
 /* Scratch buffer size */
-#define SCRATCH_BUFSIZE  1024*16
+#define SCRATCH_BUFSIZE  8192
 
 struct file_server_data {
     /* Base path of file storage */
@@ -105,10 +109,10 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 
     /* Send file-list table definition and column labels */
     httpd_resp_sendstr_chunk(req,
-        "<table class=\"fixed\" border=\"1\">"
-        "<col width=\"500px\" /><col width=\"150px\" /><col width=\"150px\" /><col width=\"100px\" />"
-        "<thead><tr><th>Name</th><th>Type</th><th>Size (Bytes)</th><th>Delete</th></tr></thead>"
-        "<tbody>");
+                             "<table class=\"fixed\" border=\"1\">"
+                             "<col width=\"500px\" /><col width=\"150px\" /><col width=\"150px\" /><col width=\"100px\" />"
+                             "<thead><tr><th>Name</th><th>Type</th><th>Size (Bytes)</th><th>Delete</th></tr></thead>"
+                             "<tbody>");
 
     /* Iterate over all files / folders and fetch their names and sizes */
     while ((entry = readdir(dir)) != NULL) {
@@ -177,7 +181,7 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filena
 
 /* Copies the full path into destination buffer and returns
  * pointer to path (skipping the preceding base path) */
-static const char* get_path_from_uri(char *dest, const char *base_path, const char *uri, size_t destsize)
+static const char *get_path_from_uri(char *dest, const char *base_path, const char *uri, size_t destsize)
 {
     const size_t base_pathlen = strlen(base_path);
     size_t pathlen = strlen(uri);
@@ -212,7 +216,7 @@ static esp_err_t download_get_handler(httpd_req_t *req)
     struct stat file_stat;
 
     const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
-                                             req->uri, sizeof(filepath));
+                           req->uri, sizeof(filepath));
     if (!filename) {
         ESP_LOGE(TAG, "Filename is too long");
         /* Respond with 500 Internal Server Error */
@@ -290,7 +294,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     /* Skip leading "/upload" from URI to get filename */
     /* Note sizeof() counts NULL termination hence the -1 */
     const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
-                                             req->uri + sizeof("/upload") - 1, sizeof(filepath));
+                           req->uri + sizeof("/upload") - 1, sizeof(filepath));
     if (!filename) {
         /* Respond with 500 Internal Server Error */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
@@ -391,6 +395,169 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static esp_err_t upload_firmware_post_handler(httpd_req_t *req)
+{
+    esp_err_t err = ESP_OK;
+    char filepath[FILE_PATH_MAX];
+
+    /* Skip leading "/upload" from URI to get filename */
+    /* Note sizeof() counts NULL termination hence the -1 */
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
+                           req->uri + sizeof("/upload_firmware") - 1, sizeof(filepath));
+    if (!filename) {
+        /* Respond with 500 Internal Server Error */
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
+        return ESP_FAIL;
+    }
+
+    /* Filename cannot have a trailing '/' */
+    if (filename[strlen(filename) - 1] == '/') {
+        ESP_LOGE(TAG, "Invalid filename : %s", filename);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid filename");
+        return ESP_FAIL;
+    }
+
+    const esp_partition_t *configured = esp_ota_get_boot_partition();
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
+
+    if (configured != running) {
+        ESP_LOGW(TAG, "Configured OTA boot partition at offset 0x%08x, but running from offset 0x%08x",
+                 configured->address, running->address);
+        ESP_LOGW(TAG, "(This can happen if either the OTA boot data or preferred boot image become corrupted somehow.)");
+    }
+    if (update_partition == NULL) {
+        ESP_LOGE(TAG, "Failed to get update_partition");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to get update_partition");
+        return ESP_FAIL;
+    }
+    ESP_LOGI(TAG, "Running partition %s type %d subtype %d (offset 0x%08x) size %u",
+             running->label, running->type, running->subtype, running->address, running->size);
+    ESP_LOGI(TAG, "Writing to partition %s subtype %d at offset 0x%x size %u",
+             update_partition->label, update_partition->subtype, update_partition->address, update_partition->size);
+
+    /* File cannot be larger than a limit */
+    if (req->content_len > update_partition->size) {
+        ESP_LOGE(TAG, "File too large : %d bytes", req->content_len);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File size must be less than the partition size!");
+        /* Return failure to close underlying connection else the
+         * incoming file content will keep the socket busy */
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Receiving file : %s...", filename);
+    /* Retrieve the pointer to scratch buffer for temporary storage */
+    char *ota_write_data = ((struct file_server_data *)req->user_ctx)->scratch;
+    esp_ota_handle_t update_handle = 0 ;
+    int remaining = req->content_len;
+    int received = 0;
+    int binary_file_length = 0;
+    bool image_header_was_checked = false; /*deal with all receive packet*/
+
+    while (remaining > 0) {
+        if ((received = httpd_req_recv(req, ota_write_data, MIN(remaining, SCRATCH_BUFSIZE))) <= 0) {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                /* Retry if timeout occurred */
+                continue;
+            }
+            ESP_LOGE(TAG, "File reception failed!");
+            /* Respond with 500 Internal Server Error */
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive file");
+            return ESP_FAIL;
+        }
+
+        if (image_header_was_checked == false) {
+            esp_app_desc_t new_app_info;
+            if (received < sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t)) {
+                ESP_LOGE(TAG, "received package is not fit len");
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Received file length too short");
+                return ESP_FAIL;
+
+            } else {
+                // check current version with downloading
+                memcpy(&new_app_info, &ota_write_data[sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t)], sizeof(esp_app_desc_t));
+                ESP_LOGI(TAG, "New firmware version: %s", new_app_info.version);
+
+                esp_app_desc_t running_app_info;
+                if (esp_ota_get_partition_description(running, &running_app_info) == ESP_OK) {
+                    ESP_LOGI(TAG, "Running firmware version: %s", running_app_info.version);
+                }
+
+                const esp_partition_t *last_invalid_app = esp_ota_get_last_invalid_partition();
+                esp_app_desc_t invalid_app_info;
+                if (esp_ota_get_partition_description(last_invalid_app, &invalid_app_info) == ESP_OK) {
+                    ESP_LOGI(TAG, "Last invalid firmware version: %s", invalid_app_info.version);
+                }
+
+                // check current version with last invalid partition
+                if (last_invalid_app != NULL) {
+                    if (memcmp(invalid_app_info.version, new_app_info.version, sizeof(new_app_info.version)) == 0) {
+                        ESP_LOGW(TAG, "New version is the same as invalid version.");
+                        ESP_LOGW(TAG, "Previously, there was an attempt to launch the firmware with %s version, but it failed.", invalid_app_info.version);
+                        ESP_LOGW(TAG, "The firmware has been rolled back to the previous version.");
+                        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "New version is the same as invalid version.");
+                        return ESP_FAIL;
+                    }
+                }
+#if 0
+                if (memcmp(new_app_info.version, running_app_info.version, sizeof(new_app_info.version)) == 0) {
+                    ESP_LOGW(TAG, "Current running version is the same as a new. We will not continue the update.");
+                    http_cleanup(client);
+                    infinite_loop();
+                }
+#endif
+                image_header_was_checked = true;
+                err = esp_ota_begin(update_partition, req->content_len, &update_handle);
+                if (err != ESP_OK) {
+                    ESP_LOGE(TAG, "esp_ota_begin failed (%s)", esp_err_to_name(err));
+                    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "esp_ota_begin failed");
+                    return ESP_FAIL;
+                }
+                ESP_LOGI(TAG, "esp_ota_begin succeeded");
+            }
+        }
+        err = esp_ota_write( update_handle, (const void *)ota_write_data, received);
+        if (err != ESP_OK) {
+            esp_ota_abort(update_handle);
+            ESP_LOGE(TAG, "File write failed!");
+            /* Respond with 500 Internal Server Error */
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to write firmware");
+            return ESP_FAIL;
+        }
+        binary_file_length += received;
+        remaining -= received;
+        ESP_LOGI(TAG, "Written image length %d", binary_file_length);
+    }
+
+    ESP_LOGI(TAG, "Total Write binary data length: %d", binary_file_length);
+    err = esp_ota_end(update_handle);
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_OTA_VALIDATE_FAILED) {
+            ESP_LOGE(TAG, "Image validation failed, image is corrupted");
+        } else {
+            ESP_LOGE(TAG, "esp_ota_end failed (%s)!", esp_err_to_name(err));
+        }
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Image validation failed, image is corrupted");
+        return ESP_FAIL;
+    }
+
+    err = esp_ota_set_boot_partition(update_partition);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "esp_ota_set_boot_partition failed (%s)!", esp_err_to_name(err));
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "esp_ota_set_boot_partition failed");
+        return ESP_FAIL;
+    }
+
+    /* Redirect onto root to see the updated file list */
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_sendstr(req, "File uploaded successfully, restarting system");
+
+    ESP_LOGI(TAG, "Prepare to restart system!");
+    vTaskDelay(pdMS_TO_TICKS(1000));
+    esp_restart();
+    return ESP_OK;
+}
+
 /* Handler to delete a file from the server */
 static esp_err_t delete_post_handler(httpd_req_t *req)
 {
@@ -400,7 +567,7 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
     /* Skip leading "/delete" from URI to get filename */
     /* Note sizeof() counts NULL termination hence the -1 */
     const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
-                                             req->uri  + sizeof("/delete") - 1, sizeof(filepath));
+                           req->uri  + sizeof("/delete") - 1, sizeof(filepath));
     if (!filename) {
         /* Respond with 500 Internal Server Error */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
@@ -432,12 +599,47 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static bool g_notice_mdns_init_flag = 0;
+#define CONFIG_EXAMPLE_MDNS_HOST_NAME "clock-home"
+#define MDNS_INSTANCE "esp home web server"
+static esp_err_t mdns_start(void)
+{
+    const int PORT = 80;
+
+
+    mdns_init();
+    mdns_hostname_set(CONFIG_EXAMPLE_MDNS_HOST_NAME);
+    mdns_instance_name_set(MDNS_INSTANCE);
+
+    mdns_txt_item_t serviceTxtData[] = {
+        {"board", "esp32"},
+        {"path", "/"}
+    };
+
+    ESP_ERROR_CHECK(mdns_service_add("ESP32-WebServer", "_http", "_tcp", 80, serviceTxtData,
+                                     sizeof(serviceTxtData) / sizeof(serviceTxtData[0])));
+
+    ESP_LOGI(TAG, "mdns service add, hostname:%s, port:%d", CONFIG_EXAMPLE_MDNS_HOST_NAME, PORT);
+
+    g_notice_mdns_init_flag = true;
+    return ESP_OK;
+}
+
+static void mdns_stop(void)
+{
+    if (!g_notice_mdns_init_flag) {
+        return ;
+    }
+
+    mdns_free();
+    g_notice_mdns_init_flag = false;
+}
+
 /* Function to start the file server */
-esp_err_t start_file_server(void)
+esp_err_t start_file_server(httpd_handle_t camera_httpd)
 {
     fs_info_t *info;
-    if(ESP_OK != fm_get_info(&info))
-    {
+    if (ESP_OK != fm_get_info(&info)) {
         return ESP_FAIL;
     }
 
@@ -448,6 +650,9 @@ esp_err_t start_file_server(void)
         return ESP_ERR_INVALID_STATE;
     }
 
+    // mdns_start();
+    // netbiosns_init();
+    // netbiosns_set_name(CONFIG_EXAMPLE_MDNS_HOST_NAME);
     /* Allocate memory for server data */
     server_data = calloc(1, sizeof(struct file_server_data));
     if (!server_data) {
@@ -458,18 +663,19 @@ esp_err_t start_file_server(void)
             sizeof(server_data->base_path));
 
     httpd_handle_t server = NULL;
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    // httpd_config_t config = HTTPD_DEFAULT_CONFIG();
 
-    /* Use the URI wildcard matching function in order to
-     * allow the same handler to respond to multiple different
-     * target URIs which match the wildcard scheme */
-    config.uri_match_fn = httpd_uri_match_wildcard;
+    // /* Use the URI wildcard matching function in order to
+    //  * allow the same handler to respond to multiple different
+    //  * target URIs which match the wildcard scheme */
+    // config.uri_match_fn = httpd_uri_match_wildcard;
 
-    ESP_LOGI(TAG, "Starting HTTP Server");
-    if (httpd_start(&server, &config) != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to start file server!");
-        return ESP_FAIL;
-    }
+    // ESP_LOGI(TAG, "Starting HTTP Server");
+    // if (httpd_start(&server, &config) != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to start file server!");
+    //     return ESP_FAIL;
+    // }
+    server = camera_httpd;
 
     /* URI handler for getting uploaded files */
     httpd_uri_t file_download = {
@@ -488,6 +694,15 @@ esp_err_t start_file_server(void)
         .user_ctx  = server_data    // Pass server data as context
     };
     httpd_register_uri_handler(server, &file_upload);
+
+    /* URI handler for uploading firmware to server */
+    httpd_uri_t firmware_upload = {
+        .uri       = "/upload_firmware/*",   // Match all URIs of type /upload/path/to/file
+        .method    = HTTP_POST,
+        .handler   = upload_firmware_post_handler,
+        .user_ctx  = server_data    // Pass server data as context
+    };
+    httpd_register_uri_handler(server, &firmware_upload);
 
     /* URI handler for deleting files from server */
     httpd_uri_t file_delete = {

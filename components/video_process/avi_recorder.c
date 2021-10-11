@@ -1,12 +1,18 @@
+#include <stdio.h>
+#include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <dirent.h>
+#include <unistd.h>
+#include <errno.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
 #include "string.h"
 #include "esp_log.h"
-#include "file_manage.h"
 #include "esp_heap_caps.h"
 #include "avi_def.h"
-#include "esp_camera.h"
 
 static const char *TAG = "avi recorder";
 
@@ -17,7 +23,8 @@ static const char *TAG = "avi recorder";
 
 typedef struct {
     const char *fname;
-    framesize_t rec_size;
+    int (*get_frame)(void **buf, size_t *len, int *w, int *h);
+    int (*return_frame)(void *buf);
     uint32_t rec_time;
     EventGroupHandle_t event_hdl;
 } recorder_param_t;
@@ -55,7 +62,7 @@ static int jpeg2avi_start(jpeg2avi_data_t *j2a, const char *filename)
     j2a->buffer = heap_caps_malloc(j2a->buf_len, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (NULL == j2a->buffer) {
         ESP_LOGE(TAG, "recorder mem failed");
-        return ESP_ERR_NO_MEM;
+        return -1;
     }
     j2a->write_len = 0;
 
@@ -65,7 +72,7 @@ static int jpeg2avi_start(jpeg2avi_data_t *j2a, const char *filename)
     j2a->avifile = open(j2a->filename, O_RDWR | O_CREAT | O_TRUNC, S_IRWXU);
     if (j2a->avifile == -1)  {
         ESP_LOGE(TAG, "Could not open %s (%s)", j2a->filename, strerror(errno));
-        return ESP_FAIL;
+        return -1;
     }
 
     strcat(j2a->filename, ".idx");
@@ -74,7 +81,7 @@ static int jpeg2avi_start(jpeg2avi_data_t *j2a, const char *filename)
         ESP_LOGE(TAG, "Could not open %s (%s)", j2a->filename, strerror(errno));
         close(j2a->avifile);
         unlink(filename);
-        return ESP_FAIL;
+        return -1;
     }
 
     uint32_t offset1 = sizeof(AVI_LIST_HEAD);  //riff head大小
@@ -89,12 +96,12 @@ static int jpeg2avi_start(jpeg2avi_data_t *j2a, const char *filename)
         close(j2a->idxfile);
         unlink(filename);
         unlink(j2a->filename);
-        return ESP_FAIL;
+        return -1;
     }
 
     j2a->nframes = 0;
     j2a->totalsize = 0;
-    return ESP_OK;
+    return 0;
 }
 
 static int jpeg2avi_add_frame(jpeg2avi_data_t *j2a, uint8_t *data, uint32_t len)
@@ -145,12 +152,11 @@ static int jpeg2avi_add_frame(jpeg2avi_data_t *j2a, uint8_t *data, uint32_t len)
     write(j2a->idxfile, &align_size, 4);/*将4字节对齐后的JPEG图像大小保存*/
     j2a->nframes += 1;
     j2a->totalsize += align_size;
-    return ESP_OK;
+    return 0;
 }
 
 static int jpeg2avi_write_header(jpeg2avi_data_t *j2a, uint32_t width, uint32_t height, uint32_t fps)
 {
-    size_t ret;
 
     AVI_LIST_HEAD riff_head = {
         .List = MAKE_FOURCC('R', 'I', 'F', 'F'),
@@ -231,9 +237,9 @@ static int jpeg2avi_write_header(jpeg2avi_data_t *j2a, uint32_t width, uint32_t 
     lseek(j2a->avifile, 0, SEEK_SET);
     write(j2a->avifile, &riff_head, sizeof(AVI_LIST_HEAD));
     write(j2a->avifile, &hdrl_list, sizeof(AVI_HDRL_LIST));
-    ret = write(j2a->avifile, &movi_list_head, sizeof(AVI_LIST_HEAD));
+    write(j2a->avifile, &movi_list_head, sizeof(AVI_LIST_HEAD));
 
-    return ESP_OK;
+    return 0;
 }
 
 static int jpeg2avi_write_index_chunk(jpeg2avi_data_t *j2a)
@@ -265,17 +271,17 @@ static int jpeg2avi_write_index_chunk(jpeg2avi_data_t *j2a)
     unlink(j2a->filename);
     if (i != j2a->nframes) {
         ESP_LOGE(TAG, "avi index write failed");
-        return ESP_FAIL;
+        return -1;
     }
 
-    return ESP_OK;
+    return 0;
 }
 
 static void jpeg2avi_end(jpeg2avi_data_t *j2a, int width, int height, int fps)
 {
     ESP_LOGI(TAG, "video info: width=%d | height=%d | fps=%d", width, height, fps);
     if (j2a->write_len) { // 如果缓存区有数据，则全写到文件
-        int ret = write(j2a->avifile, j2a->buffer, j2a->write_len);
+        write(j2a->avifile, j2a->buffer, j2a->write_len);
     }
 
     jpeg2avi_write_index_chunk(j2a);//写索引块
@@ -289,33 +295,37 @@ static void jpeg2avi_end(jpeg2avi_data_t *j2a, int width, int height, int fps)
 static void recorder_task(void *args)
 {
     int ret;
+    int width, height;
     recorder_param_t *rec_arg = (recorder_param_t *)args;
 
     jpeg2avi_data_t avi_recoder;
-    camera_fb_t *image_fb = NULL;
-    ret = jpeg2avi_start(&avi_recoder, "/sdcard/recorde.avi");
+    ret = jpeg2avi_start(&avi_recoder, rec_arg->fname);
     if (0 != ret) {
         ESP_LOGE(TAG, "start failed");
-        vTaskDelete(NULL);
+        goto err;
     }
 
     g_state = REC_STATE_BUSY;
-    sensor_t *cam_sensor = esp_camera_sensor_get();
-    cam_sensor->set_framesize(cam_sensor, rec_arg->rec_size);
 
     uint64_t fr_start = esp_timer_get_time() / 1000;
     uint64_t end_time = rec_arg->rec_time * 1000 + fr_start;
     uint64_t printf_time = fr_start;
     while (1) {
-        image_fb = esp_camera_fb_get();
-        if (!image_fb) {
-            ESP_LOGE(TAG, "Camera capture failed");
+        uint8_t **buffer;
+        size_t len;
+        ret = rec_arg->get_frame((void**)&buffer, &len, &width, &height);
+        if (0 != ret) {
+            ESP_LOGE(TAG, "get frame failed");
             vTaskDelay(5000 / portTICK_PERIOD_MS);
             continue;
         }
 
-        ret = jpeg2avi_add_frame(&avi_recoder, image_fb->buf, image_fb->len);
-        esp_camera_fb_return(image_fb);
+        ret = jpeg2avi_add_frame(&avi_recoder, *buffer, len);
+
+        if (rec_arg->return_frame) {
+            rec_arg->return_frame(buffer);
+        }
+
         if (0 != ret) {
             break;
         }
@@ -330,23 +340,33 @@ static void recorder_task(void *args)
         }
     }
     uint32_t fps = avi_recoder.nframes * 1000 / (esp_timer_get_time() / 1000 - fr_start);
-    jpeg2avi_end(&avi_recoder, resolution[rec_arg->rec_size].width, resolution[rec_arg->rec_size].height, fps);
+    jpeg2avi_end(&avi_recoder, width, height, fps);
+err:
     g_state = REC_STATE_IDLE;
     g_force_end = 0;
     xEventGroupSetBits(rec_arg->event_hdl, BIT2);
     vTaskDelete(NULL);
 }
 
-void avi_recorder_start(const char *fname, framesize_t rec_size, uint32_t rec_time, bool block)
+void avi_recorder_start(const char *fname,
+                        int (*get_frame)(void **buf, size_t *len, int *w, int *h),
+                        int (*return_frame)(void *buf),
+                        uint32_t rec_time,
+                        bool block)
 {
     if (REC_STATE_IDLE != g_state) {
         ESP_LOGE(TAG, "recorder already running");
         return;
     }
+    if (NULL == get_frame) {
+        ESP_LOGE(TAG, "recorder get frame function is invalid");
+        return;
+    }
     g_force_end = 0;
     static recorder_param_t rec_arg = {0};
+    rec_arg.get_frame = get_frame;
+    rec_arg.return_frame = return_frame;
     rec_arg.fname = fname;
-    rec_arg.rec_size = rec_size;
     rec_arg.rec_time = rec_time;
     rec_arg.event_hdl = xEventGroupCreate();
 

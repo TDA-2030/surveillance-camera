@@ -15,7 +15,8 @@ extern "C" {
 #include <stdint.h>
 #include "esp_err.h"
 
-esp_err_t start_file_server(void);
+void portal_camera_start(void);
+
 
 #ifdef __cplusplus 
 }

@@ -32,12 +32,12 @@
 #include "app_sntp.h"
 #include "app_camera.h"
 #include "captive_portal.h"
-#include "app_httpd.h"
+#include "web_portal.h"
 #include "esp_camera.h"
 #include "app_led.h"
 #include "screen_driver.h"
 #include "file_manage.h"
-#include "file_server.h"
+#include "web_portal.h"
 #include "avi_recorder.h"
 #include "vidoplayer.h"
 
@@ -48,15 +48,10 @@ static const char *TAG = "app_main";
         return (ret);                                                                   \
         }
 
-static TaskHandle_t task_handle_onenet;
-static TaskHandle_t task_handle_misc;
-static TaskHandle_t task_handle_camera;
+#define USE_WIFI 1
 
 SysStatus_t SystemStatus = 0;
 
-
-scr_driver_t g_lcd;
-static scr_info_t lcd_info;
 
 static esp_err_t camera_init(uint32_t xclk_freq_hz, pixformat_t pixel_format, framesize_t frame_size, uint8_t fb_count)
 {
@@ -156,6 +151,9 @@ static esp_err_t image_save(uint8_t *pdata, uint32_t length, const char *path)
     return ESP_OK;
 }
 
+#if USE_LCD
+scr_driver_t g_lcd;
+static scr_info_t lcd_info;
 static void screen_clear(int color)
 {
     g_lcd.get_info(&lcd_info);
@@ -180,45 +178,46 @@ static void screen_clear(int color)
     }
 }
 
-// static void lcd_init(void)
-// {
-//     spi_config_t spi_cfg = {
-//         .miso_io_num = -1,
-//         .mosi_io_num = 15, //txd
-//         .sclk_io_num = 14, //rxd
-//         .max_transfer_sz = 240 * 240 * 2 + 10,
-//     };
-//     spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
-//     ESP_LOGI(TAG, "lcd_init");
+static void lcd_init(void)
+{
 
-//     scr_interface_spi_config_t spi_lcd_cfg = {
-//         .spi_bus = spi_bus,
-//         .pin_num_cs = 12,
-//         .pin_num_dc = 4,
-//         .clk_freq = 80000000,
-//         .swap_data = 0,
-//     };
+    spi_config_t spi_cfg = {
+        .miso_io_num = -1,
+        .mosi_io_num = 15, //txd
+        .sclk_io_num = 14, //rxd
+        .max_transfer_sz = 240 * 240 * 2 + 10,
+    };
+    spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
+    ESP_LOGI(TAG, "lcd_init");
 
-//     scr_interface_driver_t *iface_drv;
-//     scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
+    scr_interface_spi_config_t spi_lcd_cfg = {
+        .spi_bus = spi_bus,
+        .pin_num_cs = 12,
+        .pin_num_dc = 4,
+        .clk_freq = 80000000,
+        .swap_data = 0,
+    };
 
-//     scr_controller_config_t lcd_cfg = {0};
-//     lcd_cfg.iface_drv = iface_drv;
-//     lcd_cfg.pin_num_rst = -1;
-//     lcd_cfg.pin_num_bckl = -1;
-//     lcd_cfg.rst_active_level = 0;
-//     lcd_cfg.bckl_active_level = 1;
-//     lcd_cfg.offset_hor = 0;
-//     lcd_cfg.offset_ver = 0;
-//     lcd_cfg.width = 240;
-//     lcd_cfg.height = 240;
-//     lcd_cfg.rotate = SCR_DIR_BTLR;
-//     scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
+    scr_interface_driver_t *iface_drv;
+    scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
 
-//     screen_clear(COLOR_ESP_BKGD); vTaskDelay(500 / portTICK_PERIOD_MS);
-//     screen_clear(COLOR_BLUE); vTaskDelay(500 / portTICK_PERIOD_MS);
-//     screen_clear(COLOR_RED); vTaskDelay(500 / portTICK_PERIOD_MS);
-// }
+    scr_controller_config_t lcd_cfg = {0};
+    lcd_cfg.iface_drv = iface_drv;
+    lcd_cfg.pin_num_rst = -1;
+    lcd_cfg.pin_num_bckl = -1;
+    lcd_cfg.rst_active_level = 0;
+    lcd_cfg.bckl_active_level = 1;
+    lcd_cfg.offset_hor = 0;
+    lcd_cfg.offset_ver = 0;
+    lcd_cfg.width = 240;
+    lcd_cfg.height = 240;
+    lcd_cfg.rotate = SCR_DIR_BTLR;
+    scr_init(SCREEN_CONTROLLER_ST7789, &lcd_cfg, &g_lcd);
+
+    screen_clear(COLOR_ESP_BKGD); vTaskDelay(500 / portTICK_PERIOD_MS);
+    screen_clear(COLOR_BLUE); vTaskDelay(500 / portTICK_PERIOD_MS);
+    screen_clear(COLOR_RED); vTaskDelay(500 / portTICK_PERIOD_MS);
+}
 
 
 static void camera_task(void *arg)
@@ -271,8 +270,9 @@ static void camera_task(void *arg)
         // vTaskDelay(500 / portTICK_PERIOD_MS);
     }
 }
+#endif
 
-
+#include "esp_task_wdt.h"
 esp_err_t WR_test(const char *path, const size_t length, float *out_read_speed, float *out_write_speed)
 {
     const size_t block_size = 1024 * 4;
@@ -298,7 +298,7 @@ esp_err_t WR_test(const char *path, const size_t length, float *out_read_speed, 
         data_buf[i] = esp_random() >> 24;
     }
 
-
+    esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
     int64_t w_start = esp_timer_get_time();
     static int64_t w_t;
     size_t remain = length;
@@ -330,7 +330,7 @@ esp_err_t WR_test(const char *path, const size_t length, float *out_read_speed, 
     f = open(filename, O_RDONLY);
     if (f == -1) {
         ESP_LOGE(TAG, "Failed to open file for reading");
-        return ESP_FAIL;
+        goto err;
     }
 
     int64_t r_start;
@@ -356,15 +356,41 @@ esp_err_t WR_test(const char *path, const size_t length, float *out_read_speed, 
 
     if (remain) {
         ESP_LOGE(TAG, "data error");
-        return ESP_FAIL;
+        goto err;
     }
 
     *out_read_speed = ((float)length / (float)r_t) * (1e6 / 1048576);
     *out_write_speed = ((float)length / (float)w_t) * (1e6 / 1048576);
-
+    esp_task_wdt_add(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
     return ESP_OK;
+err:
+    esp_task_wdt_add(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
+    return ESP_FAIL;
 }
-#include "esp_task_wdt.h"
+
+static int _get_frame(void **buf, size_t *len, int *w, int *h)
+{
+    camera_fb_t *image_fb = esp_camera_fb_get();
+    if (!image_fb) {
+        ESP_LOGE(TAG, "Camera capture failed");
+        return -1;
+    } else {
+        ESP_LOGI(TAG, "buf=%p", image_fb);
+        *buf = &image_fb->buf;
+        *len = image_fb->len;
+        *w = image_fb->width;
+        *h = image_fb->height;
+    }
+    return 0;
+}
+
+static int _return_frame(void *inbuf)
+{
+    camera_fb_t *image_fb = __containerof(inbuf, camera_fb_t, buf);
+    esp_camera_fb_return(image_fb);
+    return 0;
+}
+
 void app_main()
 {
     esp_err_t ret = nvs_flash_init();
@@ -379,11 +405,10 @@ void app_main()
     camera_init(20000000, PIXFORMAT_JPEG, FRAMESIZE_VGA, 3);
     ESP_LOGI(TAG, "fps=%f", _camera_test_fps(16));
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
-    // fm_mkdir("/sdcard/picture");
-    // lcd_init();
-    // xTaskCreate(misc_task, "misc_task", 4096, NULL, 6, &task_handle_misc);
+#if USE_LCD
+    lcd_init();
+#endif
 
-    // esp_task_wdt_delete(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
     // float ws;
     // float rs;
     // printf("| 次数 |       写      |       读      |\n");
@@ -391,28 +416,26 @@ void app_main()
     //     WR_test("/sdcard", 3 * 1024 * 1024, &rs, &ws);
     //     printf( "|  %d   |  %fMB/s |  %fMB/s |\n", i, ws, rs);
     // }
-    // esp_task_wdt_add(xTaskGetIdleTaskHandleForCPU(xPortGetCoreID()));
 
+#if USE_WIFI
+    bool is_configured;
+    captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
 
-    // bool is_configured;
-    // captive_portal_start("ESP_WEB_CONFIG", NULL, &is_configured);
+    if (is_configured) {
+        wifi_config_t wifi_config;
+        esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config);
+        ESP_LOGI(TAG, "SSID:%s, PASSWORD:%s", wifi_config.sta.ssid, wifi_config.sta.password);
+    }
+    captive_portal_wait(portMAX_DELAY);
+    SYS_STATUS_SET(SYS_STATUS_CONNECTED);
+    app_sntp_init();
+    esp_wifi_set_ps(WIFI_PS_NONE);
 
-    // if (is_configured) {
-    //     wifi_config_t wifi_config;
-    //     esp_wifi_get_config(ESP_IF_WIFI_STA, &wifi_config);
-    //     ESP_LOGI(TAG, "SSID:%s, PASSWORD:%s", wifi_config.sta.ssid, wifi_config.sta.password);
-    // }
-    // captive_portal_wait(portMAX_DELAY);
-    // SYS_STATUS_SET(SYS_STATUS_CONNECTED);
-    // app_sntp_start();
-    // esp_wifi_set_ps(WIFI_PS_NONE);
-
-    // start_file_server();
-
+    portal_camera_start();
+#endif
     vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/tom-240.avi");
     led_set_seq(_led_seq_2, 4);
-    avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_VGA, 10 * 3, 1);
+    avi_recorder_start("/sdcard/recorde.avi", _get_frame, _return_frame, 10 * 2, 1);
     led_set_seq(_led_seq_1, sizeof(_led_seq_1));
-
 }

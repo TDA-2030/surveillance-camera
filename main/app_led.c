@@ -18,7 +18,7 @@ static const char *TAG = "led";
 static bool light_state = true;
 static gpio_num_t g_led_gpio = 0;
 static uint8_t led_times = 0;
-static uint8_t stage = 1;
+static uint8_t stage = 2;
 static uint16_t times_cnt = 0;
 static uint16_t times = 0;
 static uint16_t cnt = 0;
@@ -64,6 +64,16 @@ static void periodic_led_callback(void *arg)
     led_flash_run();
 }
 
+void led_start_blink(void)
+{
+    stage = 1;
+}
+
+void led_stop_blink(void)
+{
+    stage = 2;
+}
+
 void led_set_seq(uint8_t seq_50ms[], uint8_t len)
 {
     if (len > 10) {
@@ -104,21 +114,6 @@ void led_init(gpio_num_t led_gpio)
     esp_timer_handle_t periodic_timer;
     esp_timer_create(&periodic_timer_args, &periodic_timer);
     esp_timer_start_periodic(periodic_timer, 50000);
-}
-
-void open_light(void)
-{
-    light_state = true;
-}
-
-void close_light(void)
-{
-    light_state = false;
-}
-
-bool get_light_state(void)
-{
-    return light_state;
 }
 
 void led_sethigh(void)
