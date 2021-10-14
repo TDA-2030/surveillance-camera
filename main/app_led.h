@@ -1,9 +1,4 @@
-/*
- * led.h
- *
- *  Created on: 2017年12月11日
- *      Author: ai-thinker
- */
+
 
 #ifndef MAIN_LED_H_
 #define MAIN_LED_H_

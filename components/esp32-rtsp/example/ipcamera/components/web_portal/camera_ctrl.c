@@ -15,10 +15,10 @@
 #include "esp_timer.h"
 #include "esp_camera.h"
 #include "img_converters.h"
+// #include "fb_gfx.h"
 #include "driver/ledc.h"
 #include "app_mdns.h"
 #include "sdkconfig.h"
-#include "../../main/app_camera.h"
 
 #if defined(ARDUINO_ARCH_ESP32) && defined(CONFIG_ARDUHAL_ESP_LOG)
 #include "esp32-hal-log.h"
@@ -557,56 +557,6 @@ static esp_err_t parse_get(httpd_req_t *req, char **obuf)
     return ESP_FAIL;
 }
 
-static esp_err_t camera_init(uint32_t xclk_freq_hz, pixformat_t pixel_format, framesize_t frame_size)
-{
-    framesize_t size_bak = frame_size;
-    if (PIXFORMAT_JPEG == pixel_format && FRAMESIZE_SVGA > frame_size) {
-        frame_size = FRAMESIZE_HD;
-    }
-    camera_config_t camera_config = {
-        .pin_pwdn = PWDN_GPIO_NUM,
-        .pin_reset = RESET_GPIO_NUM,
-        .pin_xclk = XCLK_GPIO_NUM,
-        .pin_sscb_sda = SIOD_GPIO_NUM,
-        .pin_sscb_scl = SIOC_GPIO_NUM,
-
-        .pin_d7 = Y9_GPIO_NUM,
-        .pin_d6 = Y8_GPIO_NUM,
-        .pin_d5 = Y7_GPIO_NUM,
-        .pin_d4 = Y6_GPIO_NUM,
-        .pin_d3 = Y5_GPIO_NUM,
-        .pin_d2 = Y4_GPIO_NUM,
-        .pin_d1 = Y3_GPIO_NUM,
-        .pin_d0 = Y2_GPIO_NUM,
-        .pin_vsync = VSYNC_GPIO_NUM,
-        .pin_href = HREF_GPIO_NUM,
-        .pin_pclk = PCLK_GPIO_NUM,
-
-        //EXPERIMENTAL: Set to 16MHz on ESP32-S2 or ESP32-S3 to enable EDMA mode
-        .xclk_freq_hz = xclk_freq_hz,
-        .ledc_timer = LEDC_TIMER_0,
-        .ledc_channel = LEDC_CHANNEL_0,
-
-        .pixel_format = pixel_format, //YUV422,GRAYSCALE,RGB565,JPEG
-        .frame_size = frame_size,    //QQVGA-UXGA Do not use sizes above QVGA when not JPEG
-
-        .jpeg_quality = 12, //0-63 lower number means higher quality
-        .fb_count = 2,       //if more than one, i2s runs in continuous mode. Use only with JPEG
-        .grab_mode = CAMERA_GRAB_WHEN_EMPTY
-    };
-
-    //initialize the camera
-    esp_err_t ret = esp_camera_init(&camera_config);
-    sensor_t *s = esp_camera_sensor_get();
-    if (ESP_OK == ret && PIXFORMAT_JPEG == pixel_format && FRAMESIZE_SVGA > size_bak) {
-
-        s->set_framesize(s, size_bak);
-    }
-    s->set_vflip(s, 1);
-
-    return ret;
-}
-
 static esp_err_t cmd_handler(httpd_req_t *req)
 {
     char *buf = NULL;
@@ -637,6 +587,7 @@ static esp_err_t cmd_handler(httpd_req_t *req)
         //     }
         // } else
         {
+            extern esp_err_t camera_init(uint32_t xclk_freq_hz, pixformat_t pixel_format, framesize_t framesize);
             extern float _camera_test_fps(uint16_t times);
 
             pixformat_t pixel_format = s->pixformat;
@@ -899,7 +850,7 @@ esp_err_t web_portal_camera_save_to_nvs(const char *key)
                 uint32_t xclk = s->xclk_freq_hz;
                 ESP_LOGI(TAG, "xclk=%d", xclk);
                 ret |= nvs_set_u32(handle, CAMERA_XCLK_NVS_KEY, xclk);
-            } else {
+            }else{
                 ESP_LOGE(TAG, "failed");
             }
             return ret;
@@ -966,7 +917,7 @@ esp_err_t web_portal_camera_load_from_nvs(const char *key)
             ret = nvs_get_u32(handle, CAMERA_XCLK_NVS_KEY, &xclk);
             if (ret == ESP_OK) {
                 ESP_LOGI(TAG, "xclk=%d", xclk);
-                s->set_xclk(s, LEDC_TIMER_0, xclk / 1000000);
+                s->set_xclk(s, LEDC_TIMER_0, xclk/1000000);
             }
         } else {
             return ESP_ERR_CAMERA_NOT_DETECTED;
@@ -1136,8 +1087,15 @@ static esp_err_t monitor_handler(httpd_req_t *req)
     return httpd_resp_send(req, (const char *)monitor_html_gz_start, monitor_html_gz_len);
 }
 
-void portal_camera_start(httpd_handle_t camera_httpd)
+void portal_camera_start(void)
 {
+    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+    config.max_uri_handlers = 16;
+    /* Use the URI wildcard matching function in order to
+     * allow the same handler to respond to multiple different
+     * target URIs which match the wildcard scheme */
+    config.uri_match_fn = httpd_uri_match_wildcard;
+
     httpd_uri_t index_uri = {
         .uri = "/camera_ctrl",
         .method = HTTP_GET,
@@ -1259,25 +1217,26 @@ void portal_camera_start(httpd_handle_t camera_httpd)
 #endif
 
 #endif
+    ESP_LOGI(TAG, "Starting web server on port: '%d'", config.server_port);
+    if (httpd_start(&camera_httpd, &config) == ESP_OK) {
+        httpd_register_uri_handler(camera_httpd, &index_uri);
+        httpd_register_uri_handler(camera_httpd, &cmd_uri);
+        httpd_register_uri_handler(camera_httpd, &status_uri);
+        httpd_register_uri_handler(camera_httpd, &capture_uri);
+        httpd_register_uri_handler(camera_httpd, &bmp_uri);
 
-    httpd_register_uri_handler(camera_httpd, &index_uri);
-    httpd_register_uri_handler(camera_httpd, &cmd_uri);
-    httpd_register_uri_handler(camera_httpd, &status_uri);
-    httpd_register_uri_handler(camera_httpd, &capture_uri);
-    httpd_register_uri_handler(camera_httpd, &bmp_uri);
+        httpd_register_uri_handler(camera_httpd, &xclk_uri);
+        httpd_register_uri_handler(camera_httpd, &reg_uri);
+        httpd_register_uri_handler(camera_httpd, &greg_uri);
+        httpd_register_uri_handler(camera_httpd, &pll_uri);
+        httpd_register_uri_handler(camera_httpd, &win_uri);
 
-    httpd_register_uri_handler(camera_httpd, &xclk_uri);
-    httpd_register_uri_handler(camera_httpd, &reg_uri);
-    httpd_register_uri_handler(camera_httpd, &greg_uri);
-    httpd_register_uri_handler(camera_httpd, &pll_uri);
-    httpd_register_uri_handler(camera_httpd, &win_uri);
+        httpd_register_uri_handler(camera_httpd, &mdns_uri);
+        // httpd_register_uri_handler(camera_httpd, &monitor_uri);
 
-    httpd_register_uri_handler(camera_httpd, &mdns_uri);
-    // httpd_register_uri_handler(camera_httpd, &monitor_uri);
+        httpd_register_uri_handler(camera_httpd, &save_param_uri);
+    }
 
-    httpd_register_uri_handler(camera_httpd, &save_param_uri);
-
-    httpd_config_t config = HTTPD_DEFAULT_CONFIG();
     config.server_port += 1;
     config.ctrl_port += 1;
     ESP_LOGI(TAG, "Starting stream server on port: '%d'", config.server_port);
@@ -1285,4 +1244,6 @@ void portal_camera_start(httpd_handle_t camera_httpd)
         httpd_register_uri_handler(stream_httpd, &stream_uri);
     }
     web_portal_camera_load_from_nvs("camera_param");
+    esp_err_t start_file_server(httpd_handle_t camera_httpd);
+    start_file_server(camera_httpd);
 }

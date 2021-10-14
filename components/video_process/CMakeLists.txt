@@ -1,6 +1,6 @@
 
 idf_component_register(SRCS avifile.c
-                            vidoplayer.c
+                            avi_player.c
                             mjpeg.c
                             avi_recorder.c
                             jpeg-9a/jaricom.c

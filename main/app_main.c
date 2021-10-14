@@ -40,6 +40,7 @@
 #include "web_portal.h"
 #include "avi_recorder.h"
 #include "vidoplayer.h"
+#include "ipc_server.h"
 
 static const char *TAG = "app_main";
 
@@ -368,6 +369,82 @@ err:
     return ESP_FAIL;
 }
 
+static EventGroupHandle_t event_give;
+static EventGroupHandle_t event_take;
+static uint8_t cam_ref_num = 0;
+static uint8_t g_frame_index = 0;
+typedef struct {
+    camera_fb_t *fb;
+    int id;
+} camera_parallel_fb_t;
+
+static camera_parallel_fb_t *_cam_get_frame_parallel(uint8_t index)
+{
+    static camera_parallel_fb_t fb[2] = {0};
+    camera_parallel_fb_t *r;
+    if (g_frame_index + 1 == index) {
+        uint32_t bits = 0;
+        for (size_t i = 0; i < cam_ref_num; i++) {
+            bits |= 1UL << i;
+        }
+        if (0 != bits) {
+            ESP_LOGW(TAG, "wait");
+            xEventGroupWaitBits(event_take, bits, pdTRUE, pdFALSE, portMAX_DELAY);
+        }
+        fb[cam_ref_num].fb = esp_camera_fb_get();
+        fb[cam_ref_num].id = cam_ref_num;
+        g_frame_index++;
+        cam_ref_num++;
+    } else if (g_frame_index == index) {
+        fb[cam_ref_num].fb = fb[cam_ref_num - 1].fb;
+        fb[cam_ref_num].id = cam_ref_num;
+        cam_ref_num++;
+        goto ret;
+    } else {
+
+    }
+
+ret:
+    r = (0 == cam_ref_num) ? &fb[1] : &fb[0];
+    ESP_LOGI(TAG, "g_frame_index=%d, cam_ref_num=%d, refid=%d", g_frame_index, cam_ref_num, r->id);
+    return r;
+}
+
+static void _cam_rerutn_frame_parallel(camera_parallel_fb_t *fb)
+{
+    xEventGroupSetBits(event_take, 1UL << fb->id);
+    uint32_t bits = xEventGroupGetBits(event_take);
+    uint8_t ref = 0;
+    for (size_t i = 0; i < 32; i++) {
+        if (bits & 1) {
+            ref++;
+        }
+        bits >>= 1;
+    }
+    ESP_LOGI(TAG, "ret: id=%d, ref=%d/%d", fb->id, ref, cam_ref_num);
+    if (ref == cam_ref_num) {
+        cam_ref_num = 0;
+        esp_camera_fb_return(fb->fb);
+    }
+}
+
+static void _test_task(void *args)
+{
+    char *TAG = pcTaskGetName(NULL);
+    uint8_t index = 1;
+    uint8_t task_id = TAG[0] - '0';
+    while (1) {
+        ESP_LOGI(TAG, "===start ot get a frame");
+        camera_parallel_fb_t *fb = _cam_get_frame_parallel(index);
+        ESP_LOGI(TAG, "===get a frame, index=%d, ref=%d", index, fb->id);
+        vTaskDelay(pdMS_TO_TICKS(10 * 1));
+        ESP_LOGI(TAG, "===ret a frame");
+        _cam_rerutn_frame_parallel(fb);
+        index++;
+    }
+}
+
+
 static int _get_frame(void **buf, size_t *len, int *w, int *h)
 {
     camera_fb_t *image_fb = esp_camera_fb_get();
@@ -391,6 +468,16 @@ static int _return_frame(void *inbuf)
     return 0;
 }
 
+static camera_fb_t *func_camera_get(void)
+{
+    return NULL;
+}
+
+static void func_camera_return(camera_fb_t *fb)
+{
+
+}
+
 void app_main()
 {
     esp_err_t ret = nvs_flash_init();
@@ -402,7 +489,7 @@ void app_main()
 
     led_init(3);
     led_set_seq(_led_seq_1, sizeof(_led_seq_1));
-    camera_init(20000000, PIXFORMAT_JPEG, FRAMESIZE_VGA, 3);
+    camera_init(20000000, PIXFORMAT_JPEG, FRAMESIZE_VGA, 1);
     ESP_LOGI(TAG, "fps=%f", _camera_test_fps(16));
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
 #if USE_LCD
@@ -428,14 +515,19 @@ void app_main()
     }
     captive_portal_wait(portMAX_DELAY);
     SYS_STATUS_SET(SYS_STATUS_CONNECTED);
-    app_sntp_init();
     esp_wifi_set_ps(WIFI_PS_NONE);
-
-    portal_camera_start();
+    web_portal_start();
+    app_sntp_init();
 #endif
     vTaskDelay(pdMS_TO_TICKS(1000));
-    // avi_play("/sdcard/tom-240.avi");
-    led_set_seq(_led_seq_2, 4);
-    avi_recorder_start("/sdcard/recorde.avi", _get_frame, _return_frame, 10 * 2, 1);
-    led_set_seq(_led_seq_1, sizeof(_led_seq_1));
+    event_give = xEventGroupCreate();
+    event_take = xEventGroupCreate();
+
+    xTaskCreatePinnedToCore(_test_task, "1test1", 1024 * 4, NULL, configMAX_PRIORITIES - 2, NULL, 1);
+    xTaskCreatePinnedToCore(_test_task, "2test2", 1024 * 4, NULL, configMAX_PRIORITIES - 2, NULL, 1);
+    // ipc_server_start(func_camera_get, func_camera_return);
+    // // avi_play("/sdcard/tom-240.avi");
+    // led_set_seq(_led_seq_2, 4);
+    // avi_recorder_start("/sdcard/recorde.avi", _get_frame, _return_frame, 10 * 30, 1);
+    // led_set_seq(_led_seq_1, sizeof(_led_seq_1));
 }

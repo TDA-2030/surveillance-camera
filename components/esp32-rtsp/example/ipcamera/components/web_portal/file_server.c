@@ -128,7 +128,6 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 
         /* Send chunk of HTML file containing table entries with file name and size */
         httpd_resp_sendstr_chunk(req, "<tr><td><a href=\"");
-        httpd_resp_sendstr_chunk(req, "/file_download");
         httpd_resp_sendstr_chunk(req, req->uri);
         httpd_resp_sendstr_chunk(req, entry->d_name);
         if (entry->d_type == DT_DIR) {
@@ -224,7 +223,7 @@ static esp_err_t download_get_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
         return ESP_FAIL;
     }
-    printf("--%s==\n", filename);
+
     /* If name has trailing '/', respond with directory contents */
     if (filename[strlen(filename) - 1] == '/') {
         return http_resp_dir_html(req, filepath);
@@ -234,15 +233,7 @@ static esp_err_t download_get_handler(httpd_req_t *req)
         /* If file not present on SPIFFS check if URI
          * corresponds to one of the hardcoded paths */
         if (strcmp(filename, "/index.html") == 0) {
-            /* Get handle to embedded file upload script */
-            extern const unsigned char login_start[] asm("_binary_login_html_start");
-            extern const unsigned char login_end[]   asm("_binary_login_html_end");
-            const size_t login_size = (login_end - login_start);
-
-            /* Add file upload form and script which on execution sends a POST request to /upload */
-            httpd_resp_send_chunk(req, (const char *)login_start, login_size);
-            httpd_resp_send_chunk(req, NULL, 0);
-            return 0;
+            return index_html_get_handler(req);
         } else if (strcmp(filename, "/favicon.ico") == 0) {
             return favicon_get_handler(req);
         }
@@ -608,8 +599,44 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+static bool g_notice_mdns_init_flag = 0;
+#define CONFIG_EXAMPLE_MDNS_HOST_NAME "clock-home"
+#define MDNS_INSTANCE "esp home web server"
+static esp_err_t mdns_start(void)
+{
+    const int PORT = 80;
+
+
+    mdns_init();
+    mdns_hostname_set(CONFIG_EXAMPLE_MDNS_HOST_NAME);
+    mdns_instance_name_set(MDNS_INSTANCE);
+
+    mdns_txt_item_t serviceTxtData[] = {
+        {"board", "esp32"},
+        {"path", "/"}
+    };
+
+    ESP_ERROR_CHECK(mdns_service_add("ESP32-WebServer", "_http", "_tcp", 80, serviceTxtData,
+                                     sizeof(serviceTxtData) / sizeof(serviceTxtData[0])));
+
+    ESP_LOGI(TAG, "mdns service add, hostname:%s, port:%d", CONFIG_EXAMPLE_MDNS_HOST_NAME, PORT);
+
+    g_notice_mdns_init_flag = true;
+    return ESP_OK;
+}
+
+static void mdns_stop(void)
+{
+    if (!g_notice_mdns_init_flag) {
+        return ;
+    }
+
+    mdns_free();
+    g_notice_mdns_init_flag = false;
+}
+
 /* Function to start the file server */
-esp_err_t start_file_server(httpd_handle_t server)
+esp_err_t start_file_server(httpd_handle_t camera_httpd)
 {
     fs_info_t *info;
     if (ESP_OK != fm_get_info(&info)) {
@@ -623,6 +650,9 @@ esp_err_t start_file_server(httpd_handle_t server)
         return ESP_ERR_INVALID_STATE;
     }
 
+    // mdns_start();
+    // netbiosns_init();
+    // netbiosns_set_name(CONFIG_EXAMPLE_MDNS_HOST_NAME);
     /* Allocate memory for server data */
     server_data = calloc(1, sizeof(struct file_server_data));
     if (!server_data) {
@@ -632,9 +662,24 @@ esp_err_t start_file_server(httpd_handle_t server)
     strlcpy(server_data->base_path, info->base_path,
             sizeof(server_data->base_path));
 
+    httpd_handle_t server = NULL;
+    // httpd_config_t config = HTTPD_DEFAULT_CONFIG();
+
+    // /* Use the URI wildcard matching function in order to
+    //  * allow the same handler to respond to multiple different
+    //  * target URIs which match the wildcard scheme */
+    // config.uri_match_fn = httpd_uri_match_wildcard;
+
+    // ESP_LOGI(TAG, "Starting HTTP Server");
+    // if (httpd_start(&server, &config) != ESP_OK) {
+    //     ESP_LOGE(TAG, "Failed to start file server!");
+    //     return ESP_FAIL;
+    // }
+    server = camera_httpd;
+
     /* URI handler for getting uploaded files */
     httpd_uri_t file_download = {
-        .uri       = "/file_download*",  // Match all URIs of type /path/to/file
+        .uri       = "/*",  // Match all URIs of type /path/to/file
         .method    = HTTP_GET,
         .handler   = download_get_handler,
         .user_ctx  = server_data    // Pass server data as context
