@@ -128,11 +128,13 @@ typedef enum {
     SCREEN_CONTROLLER_ILI9341,
     SCREEN_CONTROLLER_ILI9806,
     SCREEN_CONTROLLER_ILI9486,
+    SCREEN_CONTROLLER_ILI9488,
     SCREEN_CONTROLLER_NT35510,
     SCREEN_CONTROLLER_RM68120,
     SCREEN_CONTROLLER_ST7789,
     SCREEN_CONTROLLER_ST7796,
     SCREEN_CONTROLLER_SSD1351,
+    SCREEN_CONTROLLER_SSD1963,
 
     /* monochrome screen */
     SCREEN_CONTROLLER_SSD1306,
@@ -146,16 +148,16 @@ typedef enum {
  * 
  */
 typedef struct {
-    scr_interface_driver_t *iface_drv;   /*!< Interface driver for screen */
-    int8_t pin_num_rst;                  /*!< Pin to hardreset LCD*/
-    int8_t pin_num_bckl;                 /*!< Pin for control backlight */
-    uint8_t rst_active_level;            /*!< Reset pin active level */
-    uint8_t bckl_active_level;           /*!< Backlight active level */
-    uint16_t width;                      /*!< Screen width */
-    uint16_t height;                     /*!< Screen height */
-    uint16_t offset_hor;                 /*!< Offset of horizontal */
-    uint16_t offset_ver;                 /*!< Offset of vertical */
-    scr_dir_t rotate;                    /*!< Screen rotate direction */
+    scr_interface_driver_t *interface_drv;   /*!< Interface driver for screen */
+    int8_t pin_num_rst;                      /*!< Pin to hardreset LCD*/
+    int8_t pin_num_bckl;                     /*!< Pin for control backlight */
+    uint8_t rst_active_level;                /*!< Reset pin active level */
+    uint8_t bckl_active_level;               /*!< Backlight active level */
+    uint16_t width;                          /*!< Screen width */
+    uint16_t height;                         /*!< Screen height */
+    uint16_t offset_hor;                     /*!< Offset of horizontal */
+    uint16_t offset_ver;                     /*!< Offset of vertical */
+    scr_dir_t rotate;                        /*!< Screen rotate direction */
 } scr_controller_config_t;
 
 /**
@@ -178,9 +180,8 @@ typedef struct {
 typedef struct {
     /**
     * @brief Initialize screen
-    * @attention If you have been called function scr_init() that will call this function automatically, and should not be called it again.
     *
-    * @param lcd_conf Pointer to a structure with lcd config arguments.
+    * @param lcd_conf Pointer to a structure with lcd config arguments. see struct scr_controller_config_t
     *
     * @return
     *      - ESP_OK on success
@@ -201,8 +202,11 @@ typedef struct {
     /**
     * @brief Set screen direction of rotation
     *
-    * @param dir Pointer to a scr_dir_t structure.
-    *
+    * @param dir Pointer to a scr_dir_t structure. 
+    * You can set the direction in two ways, for example, set it to "SCR_DIR_LRBT" or "SCR_MIRROR_Y", They are the same, depending on which expression you want to use
+    * 
+    * @note Not all screens support eight directions, it depends on the screen controller.
+    * 
     * @return
     *      - ESP_OK on success
     *      - ESP_FAIL Failed
@@ -216,6 +220,8 @@ typedef struct {
     * @param y0 Starting point in Y direction
     * @param x1 End point in X direction
     * @param y1 End point in Y direction
+    * 
+    * @note When the BPP of the screen controller is less than 8, the coordinate value is limited to a multiple of some number
     *
     * @return
     *      - ESP_OK on success
@@ -275,31 +281,17 @@ typedef struct {
 } scr_driver_t;
 
 /**
- * @brief Initialize a screen
+ * @brief Find a screen driver
  *
  * @param controller Screen controller to initialize
- * @param lcd_conf configuration of screen, see scr_controller_config_t
  * @param out_screen Pointer to a screen driver
  *
  * @return
  *      - ESP_OK on success
- *      - ESP_ERR_INVALID_ARG   Arguments is NULL.
- *      - ESP_FAIL Initialize failed
- *      - ESP_ERR_NOT_FOUND: Screen controller was not found.
+ *      - ESP_ERR_INVALID_ARG Arguments is NULL.
+ *      - ESP_ERR_NOT_FOUND Screen controller was not found.
  */
-esp_err_t scr_init(scr_controller_t controller, const scr_controller_config_t *lcd_conf, scr_driver_t *out_screen);
-
-/**
- * @brief Deinitialize a screen
- *
- * @param screen screen driver to deinitialize
- *
- * @return
- *      - ESP_OK on success
- *      - ESP_ERR_INVALID_ARG   Arguments is NULL.
- *      - ESP_FAIL Deinitialize failed
- */
-esp_err_t scr_deinit(const scr_driver_t *screen);
+esp_err_t scr_find_driver(scr_controller_t controller, scr_driver_t *out_screen);
 
 #ifdef __cplusplus
 }

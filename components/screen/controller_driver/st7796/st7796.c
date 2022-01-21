@@ -81,12 +81,12 @@ esp_err_t lcd_st7796_init(const scr_controller_config_t *lcd_conf)
     LCD_CHECK(lcd_conf->width <= ST7796_RESOLUTION_HOR, "Width greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(lcd_conf->height <= ST7796_RESOLUTION_VER, "Height greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(NULL != lcd_conf, "config pointer invalid", ESP_ERR_INVALID_ARG);
-    LCD_CHECK((NULL != lcd_conf->iface_drv->write_cmd && \
-               NULL != lcd_conf->iface_drv->write_data && \
-               NULL != lcd_conf->iface_drv->write && \
-               NULL != lcd_conf->iface_drv->read && \
-               NULL != lcd_conf->iface_drv->bus_acquire && \
-               NULL != lcd_conf->iface_drv->bus_release),
+    LCD_CHECK((NULL != lcd_conf->interface_drv->write_cmd && \
+               NULL != lcd_conf->interface_drv->write_data && \
+               NULL != lcd_conf->interface_drv->write && \
+               NULL != lcd_conf->interface_drv->read && \
+               NULL != lcd_conf->interface_drv->bus_acquire && \
+               NULL != lcd_conf->interface_drv->bus_release),
               "Interface driver invalid", ESP_ERR_INVALID_ARG);
     esp_err_t ret;
     // Reset the display
@@ -99,7 +99,7 @@ esp_err_t lcd_st7796_init(const scr_controller_config_t *lcd_conf)
         vTaskDelay(100 / portTICK_RATE_MS);
     }
 
-    g_lcd_handle.iface_drv = lcd_conf->iface_drv;
+    g_lcd_handle.interface_drv = lcd_conf->interface_drv;
     g_lcd_handle.original_width = lcd_conf->width;
     g_lcd_handle.original_height = lcd_conf->height;
     g_lcd_handle.offset_hor = lcd_conf->offset_hor;
@@ -267,7 +267,7 @@ esp_err_t lcd_st7796_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h,
 static esp_err_t lcd_st7796_reg_config(void)
 {
     LCD_WRITE_CMD(0x11);        //Sleep Out
-    vTaskDelay(pdMS_TO_TICKS(200));
+    vTaskDelay(pdMS_TO_TICKS(100));
     LCD_WRITE_CMD(0xf0);
     LCD_WRITE_DATA(0xc3);           //enable command 2 part 1
     LCD_WRITE_CMD(0xf0);
@@ -315,7 +315,7 @@ static esp_err_t lcd_st7796_reg_config(void)
 
     LCD_WRITE_CMD(0xf0); LCD_WRITE_DATA(0x3c);
     LCD_WRITE_CMD(0xf0); LCD_WRITE_DATA(0x69);
-    vTaskDelay(pdMS_TO_TICKS(100));
+    vTaskDelay(pdMS_TO_TICKS(10));
     LCD_WRITE_CMD(0x29); //Display ON
 
     return ESP_OK;

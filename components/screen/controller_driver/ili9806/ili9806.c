@@ -44,8 +44,9 @@ static const char *TAG = "lcd ili9806";
 #define LCD_NAME "ILI9806"
 #define LCD_BPP  16
 
-#define ILI9806_RESOLUTION_HOR 480
-#define ILI9806_RESOLUTION_VER 864
+/** ILI9806 can select different resolution */
+#define ILI9806_RESOLUTION_HOR 480  //fixed
+#define ILI9806_RESOLUTION_VER 854  //optional
 
 static scr_handle_t g_lcd_handle;
 
@@ -75,12 +76,12 @@ esp_err_t lcd_ili9806_init(const scr_controller_config_t *lcd_conf)
     LCD_CHECK(lcd_conf->width <= ILI9806_RESOLUTION_HOR, "Width greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(lcd_conf->height <= ILI9806_RESOLUTION_VER, "Height greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(NULL != lcd_conf, "config pointer invalid", ESP_ERR_INVALID_ARG);
-    LCD_CHECK((NULL != lcd_conf->iface_drv->write_cmd && \
-               NULL != lcd_conf->iface_drv->write_data && \
-               NULL != lcd_conf->iface_drv->write && \
-               NULL != lcd_conf->iface_drv->read && \
-               NULL != lcd_conf->iface_drv->bus_acquire && \
-               NULL != lcd_conf->iface_drv->bus_release),
+    LCD_CHECK((NULL != lcd_conf->interface_drv->write_cmd && \
+               NULL != lcd_conf->interface_drv->write_data && \
+               NULL != lcd_conf->interface_drv->write && \
+               NULL != lcd_conf->interface_drv->read && \
+               NULL != lcd_conf->interface_drv->bus_acquire && \
+               NULL != lcd_conf->interface_drv->bus_release),
               "Interface driver invalid", ESP_ERR_INVALID_ARG);
     esp_err_t ret;
 
@@ -94,7 +95,7 @@ esp_err_t lcd_ili9806_init(const scr_controller_config_t *lcd_conf)
         vTaskDelay(100 / portTICK_RATE_MS);
     }
 
-    g_lcd_handle.iface_drv = lcd_conf->iface_drv;
+    g_lcd_handle.interface_drv = lcd_conf->interface_drv;
     g_lcd_handle.original_width = lcd_conf->width;
     g_lcd_handle.original_height = lcd_conf->height;
     g_lcd_handle.offset_hor = lcd_conf->offset_hor;
@@ -120,7 +121,6 @@ esp_err_t lcd_ili9806_deinit(void)
     memset(&g_lcd_handle, 0, sizeof(scr_handle_t));
     return ESP_OK;
 }
-
 
 esp_err_t lcd_ili9806_set_rotation(scr_dir_t dir)
 {
@@ -341,8 +341,27 @@ static void lcd_ili9806_init_reg(void)
     LCD_WRITE_DATA(0x00);
     LCD_WRITE_DATA(0x00);
 
-    LCD_WRITE_CMD(0xF7); // 480x854
-    LCD_WRITE_DATA(0x81);
+    LCD_WRITE_CMD(0xF7); // Panel Resolution Selection Set.
+    switch (ILI9806_RESOLUTION_VER) {
+    case 864:
+        LCD_WRITE_DATA(0x80); // set to 480x864
+        break;
+    case 854:
+        LCD_WRITE_DATA(0x81); // set to 480x854
+        break;
+    case 800:
+        LCD_WRITE_DATA(0x82); // set to 480x800
+        break;
+    case 640:
+        LCD_WRITE_DATA(0x83); // set to 480x640
+        break;
+    case 720:
+        LCD_WRITE_DATA(0x84); // set to 480x720
+        break;
+    default:
+        ESP_LOGE(TAG, "Unsupported resolution, use default [480x865]");
+        break;
+    }
 
     LCD_WRITE_CMD(0xB1); // Frame Rate
     LCD_WRITE_DATA(0x00);

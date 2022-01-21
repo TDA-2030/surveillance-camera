@@ -19,39 +19,47 @@
 #include "driver/gpio.h"
 #include "screen_driver.h"
 #include "screen_utility.h"
-#include "st7789.h"
+#include "ssd1963.h"
 
-static const char *TAG = "lcd st7789";
+static const char *TAG = "lcd ssd1963";
 
 #define LCD_CHECK(a, str, ret)  if(!(a)) {                               \
         ESP_LOGE(TAG,"%s:%d (%s):%s", __FILE__, __LINE__, __FUNCTION__, str);   \
         return (ret);                                                           \
     }
 
-#define LCD_NAME "ST7789"
+#define LCD_NAME "SSD1963"
 #define LCD_BPP  16
 
-/** commands of ST7789 */
-#define LCD_SWRESET 0x01  // Software Reset
-#define LCD_RDDID   0x04  // Read Display ID
-#define LCD_INVOFF  0x20  // Display Inversion Off
-#define LCD_INVON   0x21  // Display Inversion On
-#define LCD_CASET   0x2A  // Column Address Set
-#define LCD_PASET   0x2B  // Row Address Set
-#define LCD_RAMWR   0x2C  // Memory Writ
-#define LCD_RAMRD   0x2E  // Memory Read
-#define LCD_MADCTL  0x36  // Memory Data Access Control
+#define SSD1963_CASET   0x2A
+#define SSD1963_RASET   0x2B
+#define SSD1963_RAMWR   0x2C
+#define SSD1963_MADCTL  0x36
 
 /* MADCTL Defines */
-#define MADCTL_MY  0x80
-#define MADCTL_MX  0x40
+#define MADCTL_MY  0x01
+#define MADCTL_MX  0x02
 #define MADCTL_MV  0x20
 #define MADCTL_ML  0x10
 #define MADCTL_RGB 0x08
 #define MADCTL_MH  0x04
 
-#define ST7789_RESOLUTION_HOR 240
-#define ST7789_RESOLUTION_VER 320
+#define SSD1963_RESOLUTION_HOR 800
+#define SSD1963_RESOLUTION_VER 480
+
+//LCD panel configuration
+#define SSD_HOR_PULSE_WIDTH     1
+#define SSD_HOR_BACK_PORCH      46
+#define SSD_HOR_FRONT_PORCH     210
+
+#define SSD_VER_PULSE_WIDTH     1
+#define SSD_VER_BACK_PORCH      23
+#define SSD_VER_FRONT_PORCH     22
+
+#define SSD_HT  (SSD1963_RESOLUTION_HOR+SSD_HOR_BACK_PORCH+SSD_HOR_FRONT_PORCH)
+#define SSD_HPS (SSD_HOR_BACK_PORCH)
+#define SSD_VT  (SSD1963_RESOLUTION_VER+SSD_VER_BACK_PORCH+SSD_VER_FRONT_PORCH)
+#define SSD_VPS (SSD_VER_BACK_PORCH)
 
 static scr_handle_t g_lcd_handle;
 
@@ -61,95 +69,23 @@ static scr_handle_t g_lcd_handle;
  */
 #include "interface_drv_def.h"
 
-scr_driver_t lcd_st7789_default_driver = {
-    .init = lcd_st7789_init,
-    .deinit = lcd_st7789_deinit,
-    .set_direction = lcd_st7789_set_rotation,
-    .set_window = lcd_st7789_set_window,
-    .write_ram_data = lcd_st7789_write_ram_data,
-    .draw_pixel = lcd_st7789_draw_pixel,
-    .draw_bitmap = lcd_st7789_draw_bitmap,
-    .get_info = lcd_st7789_get_info,
+scr_driver_t lcd_ssd1963_default_driver = {
+    .init = lcd_ssd1963_init,
+    .deinit = lcd_ssd1963_deinit,
+    .set_direction = lcd_ssd1963_set_rotation,
+    .set_window = lcd_ssd1963_set_window,
+    .write_ram_data = lcd_ssd1963_write_ram_data,
+    .draw_pixel = lcd_ssd1963_draw_pixel,
+    .draw_bitmap = lcd_ssd1963_draw_bitmap,
+    .get_info = lcd_ssd1963_get_info,
 };
 
-static void lcd_st7789_init_reg(void)
+static void lcd_ssd1963_init_reg(void);
+
+esp_err_t lcd_ssd1963_init(const scr_controller_config_t *lcd_conf)
 {
-    LCD_WRITE_CMD(0x3A);
-    LCD_WRITE_DATA(0x05);
-
-    LCD_WRITE_CMD(0xB2);
-    LCD_WRITE_DATA(0x0C);
-    LCD_WRITE_DATA(0x0C);
-    LCD_WRITE_DATA(0x00);
-    LCD_WRITE_DATA(0x33);
-    LCD_WRITE_DATA(0x33);
-
-    LCD_WRITE_CMD(0xB7);  //Gate Control
-    LCD_WRITE_DATA(0x35);
-
-    LCD_WRITE_CMD(0xBB);  //VCOM Setting
-    LCD_WRITE_DATA(0x19);
-
-    LCD_WRITE_CMD(0xC0); //LCM Control     
-    LCD_WRITE_DATA(0x2C);
-
-    LCD_WRITE_CMD(0xC2);  //VDV and VRH Command Enable
-    LCD_WRITE_DATA(0x01);
-    LCD_WRITE_CMD(0xC3);  //VRH Set
-    LCD_WRITE_DATA(0x12);
-    LCD_WRITE_CMD(0xC4);  //VDV Set
-    LCD_WRITE_DATA(0x20);
-
-    LCD_WRITE_CMD(0xC6);  //Frame Rate Control in Normal Mode
-    LCD_WRITE_DATA(0x0F);
-    
-    LCD_WRITE_CMD(0xD0);  // Power Control 1
-    LCD_WRITE_DATA(0xA4);
-    LCD_WRITE_DATA(0xA1);
-
-    LCD_WRITE_CMD(0xE0);  //Positive Voltage Gamma Control
-    LCD_WRITE_DATA(0xD0);
-    LCD_WRITE_DATA(0x04);
-    LCD_WRITE_DATA(0x0D);
-    LCD_WRITE_DATA(0x11);
-    LCD_WRITE_DATA(0x13);
-    LCD_WRITE_DATA(0x2B);
-    LCD_WRITE_DATA(0x3F);
-    LCD_WRITE_DATA(0x54);
-    LCD_WRITE_DATA(0x4C);
-    LCD_WRITE_DATA(0x18);
-    LCD_WRITE_DATA(0x0D);
-    LCD_WRITE_DATA(0x0B);
-    LCD_WRITE_DATA(0x1F);
-    LCD_WRITE_DATA(0x23);
-
-    LCD_WRITE_CMD(0xE1);  //Negative Voltage Gamma Control
-    LCD_WRITE_DATA(0xD0);
-    LCD_WRITE_DATA(0x04);
-    LCD_WRITE_DATA(0x0C);
-    LCD_WRITE_DATA(0x11);
-    LCD_WRITE_DATA(0x13);
-    LCD_WRITE_DATA(0x2C);
-    LCD_WRITE_DATA(0x3F);
-    LCD_WRITE_DATA(0x44);
-    LCD_WRITE_DATA(0x51);
-    LCD_WRITE_DATA(0x2F);
-    LCD_WRITE_DATA(0x1F);
-    LCD_WRITE_DATA(0x1F);
-    LCD_WRITE_DATA(0x20);
-    LCD_WRITE_DATA(0x23);
-
-    LCD_WRITE_CMD(0x21);  //Display Inversion On
-
-    LCD_WRITE_CMD(0x11);  //Sleep Out
-
-    LCD_WRITE_CMD(0x29);  //Display On
-}
-
-esp_err_t lcd_st7789_init(const scr_controller_config_t *lcd_conf)
-{
-    LCD_CHECK(lcd_conf->width <= ST7789_RESOLUTION_HOR, "Width greater than maximum", ESP_ERR_INVALID_ARG);
-    LCD_CHECK(lcd_conf->height <= ST7789_RESOLUTION_VER, "Height greater than maximum", ESP_ERR_INVALID_ARG);
+    LCD_CHECK(lcd_conf->width <= SSD1963_RESOLUTION_HOR, "Width greater than maximum", ESP_ERR_INVALID_ARG);
+    LCD_CHECK(lcd_conf->height <= SSD1963_RESOLUTION_VER, "Height greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(NULL != lcd_conf, "config pointer invalid", ESP_ERR_INVALID_ARG);
     LCD_CHECK((NULL != lcd_conf->interface_drv->write_cmd && \
                NULL != lcd_conf->interface_drv->write_data && \
@@ -159,6 +95,7 @@ esp_err_t lcd_st7789_init(const scr_controller_config_t *lcd_conf)
                NULL != lcd_conf->interface_drv->bus_release),
               "Interface driver invalid", ESP_ERR_INVALID_ARG);
     esp_err_t ret;
+
     // Reset the display
     if (lcd_conf->pin_num_rst >= 0) {
         gpio_pad_select_gpio(lcd_conf->pin_num_rst);
@@ -175,7 +112,7 @@ esp_err_t lcd_st7789_init(const scr_controller_config_t *lcd_conf)
     g_lcd_handle.offset_hor = lcd_conf->offset_hor;
     g_lcd_handle.offset_ver = lcd_conf->offset_ver;
 
-    lcd_st7789_init_reg();
+    lcd_ssd1963_init_reg();
 
     // Enable backlight
     if (lcd_conf->pin_num_bckl >= 0) {
@@ -183,20 +120,20 @@ esp_err_t lcd_st7789_init(const scr_controller_config_t *lcd_conf)
         gpio_set_direction(lcd_conf->pin_num_bckl, GPIO_MODE_OUTPUT);
         gpio_set_level(lcd_conf->pin_num_bckl, (lcd_conf->bckl_active_level) & 0x1);
     }
-    ret = lcd_st7789_set_rotation(lcd_conf->rotate);
-    LCD_CHECK(ESP_OK == ret, "Set rotate failed", ESP_FAIL);
-    ret = lcd_st7789_set_invert(1);  /**< ST7789 setting the reverse color is the normal color */
-    LCD_CHECK(ESP_OK == ret, "Set color invert failed", ESP_FAIL);
+
+    ret = lcd_ssd1963_set_rotation(lcd_conf->rotate);
+    LCD_CHECK(ESP_OK == ret, "set rotation failed", ESP_FAIL);
+
     return ESP_OK;
 }
 
-esp_err_t lcd_st7789_deinit(void)
+esp_err_t lcd_ssd1963_deinit(void)
 {
     memset(&g_lcd_handle, 0, sizeof(scr_handle_t));
     return ESP_OK;
 }
 
-esp_err_t lcd_st7789_set_rotation(scr_dir_t dir)
+esp_err_t lcd_ssd1963_set_rotation(scr_dir_t dir)
 {
     esp_err_t ret;
     uint8_t reg_data = 0;
@@ -248,14 +185,14 @@ esp_err_t lcd_st7789_set_rotation(scr_dir_t dir)
         break;
     default: break;
     }
-    ESP_LOGI(TAG, "MADCTL=%x", reg_data);
-    ret = LCD_WRITE_REG(LCD_MADCTL, reg_data);
+    ESP_LOGI(TAG, "MADCTL=0x%x", reg_data);
+    ret = LCD_WRITE_REG(SSD1963_MADCTL, reg_data);
     LCD_CHECK(ESP_OK == ret, "Set screen rotate failed", ESP_FAIL);
     g_lcd_handle.dir = dir;
     return ESP_OK;
 }
 
-esp_err_t lcd_st7789_get_info(scr_info_t *info)
+esp_err_t lcd_ssd1963_get_info(scr_info_t *info)
 {
     LCD_CHECK(NULL != info, "info pointer invalid", ESP_ERR_INVALID_ARG);
     info->width = g_lcd_handle.width;
@@ -267,30 +204,30 @@ esp_err_t lcd_st7789_get_info(scr_info_t *info)
     return ESP_OK;
 }
 
-esp_err_t lcd_st7789_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
+esp_err_t lcd_ssd1963_set_window(uint16_t x0, uint16_t y0, uint16_t x1, uint16_t y1)
 {
     LCD_CHECK((x1 < g_lcd_handle.width) && (y1 < g_lcd_handle.height), "The set coordinates exceed the screen size", ESP_ERR_INVALID_ARG);
     LCD_CHECK((x0 <= x1) && (y0 <= y1), "Window coordinates invalid", ESP_ERR_INVALID_ARG);
     esp_err_t ret = ESP_OK;
-    scr_utility_apply_offset(&g_lcd_handle, ST7789_RESOLUTION_HOR, ST7789_RESOLUTION_VER, &x0, &y0, &x1, &y1);
+    scr_utility_apply_offset(&g_lcd_handle, SSD1963_RESOLUTION_HOR, SSD1963_RESOLUTION_VER, &x0, &y0, &x1, &y1);
 
-    ret |= LCD_WRITE_CMD(LCD_CASET);
-    ret |= LCD_WRITE_DATA(x0 >> 8);
-    ret |= LCD_WRITE_DATA(x0 & 0xff);
-    ret |= LCD_WRITE_DATA(x1 >> 8);
-    ret |= LCD_WRITE_DATA(x1 & 0xff);
-    ret |= LCD_WRITE_CMD(LCD_PASET);
-    ret |= LCD_WRITE_DATA(y0 >> 8);
-    ret |= LCD_WRITE_DATA(y0 & 0xff);
-    ret |= LCD_WRITE_DATA(y1 >> 8);
-    ret |= LCD_WRITE_DATA(y1 & 0xff);
+    LCD_WRITE_CMD(SSD1963_CASET);
+    LCD_WRITE_DATA(x0 >> 8);
+    LCD_WRITE_DATA(x0 & 0XFF);
+    LCD_WRITE_DATA(x1 >> 8);
+    LCD_WRITE_DATA(x1 & 0XFF);
+    LCD_WRITE_CMD(SSD1963_RASET);
+    LCD_WRITE_DATA(y0 >> 8);
+    LCD_WRITE_DATA(y0 & 0XFF);
+    LCD_WRITE_DATA(y1 >> 8);
+    LCD_WRITE_DATA(y1 & 0XFF);
 
-    ret |= LCD_WRITE_CMD(LCD_RAMWR);
+    ret |= LCD_WRITE_CMD(SSD1963_RAMWR);
     LCD_CHECK(ESP_OK == ret, "Set window failed", ESP_FAIL);
     return ESP_OK;
 }
 
-esp_err_t lcd_st7789_write_ram_data(uint16_t color)
+esp_err_t lcd_ssd1963_write_ram_data(uint16_t color)
 {
     static uint8_t data[2];
     data[0] = (uint8_t)(color & 0xff);
@@ -298,35 +235,111 @@ esp_err_t lcd_st7789_write_ram_data(uint16_t color)
     return LCD_WRITE(data, 2);
 }
 
-esp_err_t lcd_st7789_set_invert(bool is_invert)
-{
-    return LCD_WRITE_CMD(is_invert ? LCD_INVON : LCD_INVOFF);
-}
-
-esp_err_t lcd_st7789_draw_pixel(uint16_t x, uint16_t y, uint16_t color)
+esp_err_t lcd_ssd1963_draw_pixel(uint16_t x, uint16_t y, uint16_t color)
 {
     esp_err_t ret;
-    ret = lcd_st7789_set_window(x, y, x, y);
+    ret = lcd_ssd1963_set_window(x, y, x, y);
     if (ESP_OK != ret) {
         return ESP_FAIL;
     }
-    return lcd_st7789_write_ram_data(color);
+    return lcd_ssd1963_write_ram_data(color);
 }
 
-esp_err_t lcd_st7789_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
+esp_err_t lcd_ssd1963_draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
 {
-    esp_err_t ret;
-    LCD_CHECK(NULL != bitmap, "bitmap pointer invalid", ESP_ERR_INVALID_ARG);
+    LCD_CHECK((x + w <= g_lcd_handle.width) && (y + h <= g_lcd_handle.height), "The set coordinates exceed the screen size", ESP_ERR_INVALID_ARG);
+    esp_err_t ret = ESP_OK;
+    uint8_t *p = (uint8_t *)bitmap;
 
     LCD_IFACE_ACQUIRE();
-    ret = lcd_st7789_set_window(x, y, x + w - 1, y + h - 1);
+    ret = lcd_ssd1963_set_window(x, y, x + w - 1, y + h - 1);
     if (ESP_OK != ret) {
         return ESP_FAIL;
     }
 
-    uint32_t len = w * h;
-    ret = LCD_WRITE((uint8_t *)bitmap, 2 * len);
+    ret = LCD_WRITE(p, w * LCD_BPP / 8 * h);
     LCD_IFACE_RELEASE();
-    LCD_CHECK(ESP_OK == ret, "lcd write ram data failed", ESP_FAIL);
+    LCD_CHECK(ESP_OK == ret, "Draw bitmap failed", ESP_FAIL);
     return ESP_OK;
+}
+
+static void lcd_ssd1963_init_reg(void)
+{
+    LCD_WRITE_CMD(0xE2);        //Set PLL with OSC = 10MHz (hardware),  Multiplier N = 35, 250MHz < VCO < 800MHz = OSC*(N+1), VCO = 300MHz
+    LCD_WRITE_DATA(0x1D);       //
+    LCD_WRITE_DATA(0x02);       //Divider M = 2, PLL = 300/(M+1) = 100MHz
+    LCD_WRITE_DATA(0x04);       //Validate M and N values
+
+    vTaskDelay(pdMS_TO_TICKS(1));
+
+    LCD_WRITE_CMD(0xE0);        // Start PLL command
+    LCD_WRITE_DATA(0x01);       // enable PLL
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    LCD_WRITE_CMD(0xE0);        // Start PLL command again
+    LCD_WRITE_DATA(0x03);       // now, use PLL output as system clock
+
+    vTaskDelay(pdMS_TO_TICKS(12));
+
+    LCD_WRITE_CMD(0x01);        //soft-reset
+
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    LCD_WRITE_CMD(0xE6);        //set pixel frequency,33Mhz
+    LCD_WRITE_DATA(0x2F);
+    LCD_WRITE_DATA(0xFF);
+    LCD_WRITE_DATA(0xFF);
+
+    LCD_WRITE_CMD(0xB0);        //set LCD mode
+    LCD_WRITE_DATA(0x20);       //24-bit mode
+    LCD_WRITE_DATA(0x00);       //TFT
+    LCD_WRITE_DATA((SSD1963_RESOLUTION_HOR - 1) >> 8); //set LCD horizontal pixel number
+    LCD_WRITE_DATA((SSD1963_RESOLUTION_HOR - 1) & 0xff);
+    LCD_WRITE_DATA((SSD1963_RESOLUTION_VER - 1) >> 8); //set LCD vertical pixel number
+    LCD_WRITE_DATA((SSD1963_RESOLUTION_VER - 1) & 0xff);
+    LCD_WRITE_DATA(0x00);       //RGB
+
+    LCD_WRITE_CMD(0xB4);        //Set horizontal period
+    LCD_WRITE_DATA((SSD_HT - 1) >> 8);
+    LCD_WRITE_DATA((SSD_HT - 1) & 0xff);
+    LCD_WRITE_DATA(SSD_HPS >> 8);
+    LCD_WRITE_DATA((SSD_HPS) & 0xff);
+    LCD_WRITE_DATA(SSD_HOR_PULSE_WIDTH - 1);
+    LCD_WRITE_DATA(0x00);
+    LCD_WRITE_DATA(0x00);
+    LCD_WRITE_DATA(0x00);
+
+    LCD_WRITE_CMD(0xB6);        //Set vertical period
+    LCD_WRITE_DATA((SSD_VT - 1) >> 8);
+    LCD_WRITE_DATA((SSD_VT - 1) & 0xff);
+    LCD_WRITE_DATA(SSD_VPS >> 8);
+    LCD_WRITE_DATA((SSD_VPS) & 0xff);
+    LCD_WRITE_DATA(SSD_VER_FRONT_PORCH - 1);
+    LCD_WRITE_DATA(0x00);
+    LCD_WRITE_DATA(0x00);
+
+    LCD_WRITE_CMD(0xF0);    //set SSD1963 interface is 16bit
+    LCD_WRITE_DATA(0x03);   //16-bit(565 format) data for 16bpp
+
+    LCD_WRITE_CMD(0x29);    //display on
+
+    LCD_WRITE_CMD(0xD0);
+    LCD_WRITE_DATA(0x00);   //disable
+
+    LCD_WRITE_CMD(0xBE);    //configuration PWM output
+    LCD_WRITE_DATA(0x05);   //1 PWM frequency
+    LCD_WRITE_DATA(0xFE);   //2 PWM duty
+    LCD_WRITE_DATA(0x01);   //3 C
+    LCD_WRITE_DATA(0x00);   //4 D
+    LCD_WRITE_DATA(0x00);   //5 E
+    LCD_WRITE_DATA(0x00);   //6 F
+
+    LCD_WRITE_CMD(0xB8);    //set GPIO
+    LCD_WRITE_DATA(0x03);
+    LCD_WRITE_DATA(0x01);
+
+    LCD_WRITE_CMD(0xBA);
+    LCD_WRITE_DATA(0X01);   //GPIO[1:0]=01
+
 }

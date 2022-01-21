@@ -23,9 +23,6 @@
 
 static const char *TAG = "mono lcd test";
 
-static scr_driver_t lcd;
-static scr_info_t lcd_info;
-
 static const unsigned char bmp_image_128_64[];
 static const unsigned char bmp_image_52_24[];
 static const unsigned char bmp_image_256_64_4bit[];
@@ -56,6 +53,8 @@ static void contrast_test(esp_err_t (*set_contrast)(uint8_t v))
 
 TEST_CASE("Screen SSD1306 I2C test", "[screen][iot]")
 {
+    scr_driver_t lcd;
+    scr_info_t lcd_info;
     i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = 12,
@@ -76,7 +75,7 @@ TEST_CASE("Screen SSD1306 I2C test", "[screen][iot]")
     scr_interface_driver_t *iface_drv;
     TEST_ASSERT(ESP_OK == scr_interface_create(SCREEN_IFACE_I2C, &iface_cfg, &iface_drv));
     scr_controller_config_t lcd_cfg = {0};
-    lcd_cfg.iface_drv = iface_drv,
+    lcd_cfg.interface_drv = iface_drv,
     lcd_cfg.pin_num_rst = 0,
     lcd_cfg.pin_num_bckl = -1,
     lcd_cfg.rst_active_level = 0,
@@ -84,9 +83,12 @@ TEST_CASE("Screen SSD1306 I2C test", "[screen][iot]")
     lcd_cfg.width = 128;
     lcd_cfg.height = 64;
     lcd_cfg.rotate = SCR_DIR_LRTB;
-    TEST_ASSERT(ESP_OK == scr_init(SCREEN_CONTROLLER_SSD1306, &lcd_cfg, &lcd));
+    TEST_ASSERT(ESP_OK == scr_find_driver(SCREEN_CONTROLLER_SSD1306, &lcd));
+    TEST_ASSERT(ESP_OK == lcd.init(&lcd_cfg));
+
 
     TEST_ASSERT(ESP_OK == lcd.get_info(&lcd_info));
+    ESP_LOGI(TAG, "Screen name:%s | width:%d | height:%d", lcd_info.name, lcd_info.width, lcd_info.height);
     TEST_ASSERT(ESP_OK == lcd.draw_bitmap(0, 0, 128, 64, (uint16_t *)bmp_image_128_64));
     vTaskDelay(1000 / portTICK_PERIOD_MS);
     uint8_t i = 0, j = 0;
@@ -97,13 +99,15 @@ TEST_CASE("Screen SSD1306 I2C test", "[screen][iot]")
 
     contrast_test(lcd_ssd1306_set_contrast);
 
-    scr_deinit(&lcd);
+    lcd.deinit();
     scr_interface_delete(iface_drv);
     i2c_bus_delete(&i2c_bus);
 }
 
 TEST_CASE("Screen SSD1307 I2C test", "[screen][iot]")
 {
+    scr_driver_t lcd;
+    scr_info_t lcd_info;
     i2c_config_t i2c_conf = {
         .mode = I2C_MODE_MASTER,
         .sda_io_num = 6,
@@ -124,7 +128,7 @@ TEST_CASE("Screen SSD1307 I2C test", "[screen][iot]")
     scr_interface_driver_t *iface_drv;
     TEST_ASSERT(ESP_OK == scr_interface_create(SCREEN_IFACE_I2C, &iface_cfg, &iface_drv));
     scr_controller_config_t lcd_cfg = {0};
-    lcd_cfg.iface_drv = iface_drv,
+    lcd_cfg.interface_drv = iface_drv,
     lcd_cfg.pin_num_rst = 0,
     lcd_cfg.pin_num_bckl = -1,
     lcd_cfg.rst_active_level = 0,
@@ -132,9 +136,11 @@ TEST_CASE("Screen SSD1307 I2C test", "[screen][iot]")
     lcd_cfg.width = 128;
     lcd_cfg.height = 32;
     lcd_cfg.rotate = SCR_DIR_LRTB;
-    TEST_ASSERT(ESP_OK == scr_init(SCREEN_CONTROLLER_SSD1307, &lcd_cfg, &lcd));
+    TEST_ASSERT(ESP_OK == scr_find_driver(SCREEN_CONTROLLER_SSD1307, &lcd));
+    TEST_ASSERT(ESP_OK == lcd.init(&lcd_cfg));
 
     TEST_ASSERT(ESP_OK == lcd.get_info(&lcd_info));
+    ESP_LOGI(TAG, "Screen name:%s | width:%d | height:%d", lcd_info.name, lcd_info.width, lcd_info.height);
 
     uint8_t i = 0, j = 0;
     for (i = 0; i < 128 - 52; i++) {
@@ -144,13 +150,15 @@ TEST_CASE("Screen SSD1307 I2C test", "[screen][iot]")
 
     contrast_test(lcd_ssd1307_set_contrast);
 
-    scr_deinit(&lcd);
+    lcd.deinit();
     scr_interface_delete(iface_drv);
     i2c_bus_delete(&i2c_bus);
 }
 
 TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
 {
+    scr_driver_t lcd;
+    scr_info_t lcd_info;
     spi_config_t spi_cfg = {
         .miso_io_num = -1,
         .mosi_io_num = 37,
@@ -172,7 +180,7 @@ TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
     TEST_ASSERT(ESP_OK == scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv));
 
     scr_controller_config_t lcd_cfg = {0};
-    lcd_cfg.iface_drv = iface_drv,
+    lcd_cfg.interface_drv = iface_drv,
     lcd_cfg.pin_num_rst = 0,
     lcd_cfg.pin_num_bckl = -1,
     lcd_cfg.rst_active_level = 0,
@@ -180,7 +188,8 @@ TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
     lcd_cfg.width = 256;
     lcd_cfg.height = 64;
     lcd_cfg.rotate = SCR_DIR_LRTB;
-    TEST_ASSERT(ESP_OK == scr_init(SCREEN_CONTROLLER_SSD1322, &lcd_cfg, &lcd));
+    TEST_ASSERT(ESP_OK == scr_find_driver(SCREEN_CONTROLLER_SSD1322, &lcd));
+    TEST_ASSERT(ESP_OK == lcd.init(&lcd_cfg));
 
     TEST_ASSERT(ESP_OK == lcd.get_info(&lcd_info));
     ESP_LOGI(TAG, "Screen name:%s | width:%d | height:%d", lcd_info.name, lcd_info.width, lcd_info.height);
@@ -212,7 +221,7 @@ TEST_CASE("Screen SSD1322 SPI test", "[screen][iot]")
 
     heap_caps_free(pixels);
 
-    scr_deinit(&lcd);
+    lcd.deinit();
     scr_interface_delete(iface_drv);
     spi_bus_delete(&spi_bus);
 }

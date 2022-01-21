@@ -14,7 +14,6 @@
 #ifndef   __I2S_LCD_DRIVER_H__
 #define   __I2S_LCD_DRIVER_H__
 
-#include "freertos/FreeRTOS.h"
 #include "driver/i2s.h"
 
 #ifdef __cplusplus
@@ -86,6 +85,19 @@ esp_err_t i2s_lcd_write_data(i2s_lcd_handle_t handle, uint16_t data);
  *      - ESP_ERR_INVALID_ARG handle is invalid
  */
 esp_err_t i2s_lcd_write_cmd(i2s_lcd_handle_t handle, uint16_t cmd);
+
+/**
+ * @brief Write a command to LCD
+ * 
+ * @param handle Handle of i2s lcd driver
+ * @param cmd command to write
+ * @param length length of command
+ * 
+ * @return
+ *      - ESP_OK on success
+ *      - ESP_ERR_INVALID_ARG handle is invalid
+ */
+esp_err_t i2s_lcd_write_command(i2s_lcd_handle_t handle, const uint8_t *cmd, uint32_t length);
 
 /**
  * @brief Write block data to LCD

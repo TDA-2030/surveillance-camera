@@ -95,12 +95,12 @@ esp_err_t lcd_ssd1351_init(const scr_controller_config_t *lcd_conf)
     LCD_CHECK(lcd_conf->width <= SSD1351_RESOLUTION_HOR, "Width greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(lcd_conf->height <= SSD1351_RESOLUTION_VER, "Height greater than maximum", ESP_ERR_INVALID_ARG);
     LCD_CHECK(NULL != lcd_conf, "config pointer invalid", ESP_ERR_INVALID_ARG);
-    LCD_CHECK((NULL != lcd_conf->iface_drv->write_cmd && \
-              NULL != lcd_conf->iface_drv->write_data && \
-              NULL != lcd_conf->iface_drv->write && \
-              NULL != lcd_conf->iface_drv->read && \
-              NULL != lcd_conf->iface_drv->bus_acquire && \
-              NULL != lcd_conf->iface_drv->bus_release),
+    LCD_CHECK((NULL != lcd_conf->interface_drv->write_cmd && \
+              NULL != lcd_conf->interface_drv->write_data && \
+              NULL != lcd_conf->interface_drv->write && \
+              NULL != lcd_conf->interface_drv->read && \
+              NULL != lcd_conf->interface_drv->bus_acquire && \
+              NULL != lcd_conf->interface_drv->bus_release),
               "Interface driver invalid", ESP_ERR_INVALID_ARG);
 
     // Reset the display
@@ -113,7 +113,7 @@ esp_err_t lcd_ssd1351_init(const scr_controller_config_t *lcd_conf)
         vTaskDelay(100 / portTICK_RATE_MS);
     }
 
-    g_lcd_handle.iface_drv = lcd_conf->iface_drv;
+    g_lcd_handle.interface_drv = lcd_conf->interface_drv;
     g_lcd_handle.original_width = lcd_conf->width;
     g_lcd_handle.original_height = lcd_conf->height;
     g_lcd_handle.offset_hor = lcd_conf->offset_hor;

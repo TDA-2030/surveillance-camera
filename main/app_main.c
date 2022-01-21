@@ -113,39 +113,42 @@ static void screen_clear(int color)
 
 static void lcd_init(void)
 {
-    spi_config_t spi_cfg = {
-        .miso_io_num = -1,
-        .mosi_io_num = 21, //txd
-        .sclk_io_num = 22, //rxd
-        .max_transfer_sz = 240 * 320*2+10,
-    };
-    spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
-    ESP_LOGI(TAG, "lcd_init");
+    // spi_config_t spi_cfg = {
+    //     .miso_io_num = -1,
+    //     .mosi_io_num = 21, //txd
+    //     .sclk_io_num = 22, //rxd
+    //     .max_transfer_sz = 240 * 320*2+10,
+    // };
+    // spi_bus_handle_t spi_bus = spi_bus_create(VSPI_HOST, &spi_cfg);
+    // ESP_LOGI(TAG, "lcd_init");
 
-    scr_interface_spi_config_t spi_lcd_cfg = {
-        .spi_bus = spi_bus,
-        .pin_num_cs = 5,
-        .pin_num_dc = 19,
-        .clk_freq = 80000000,
-        .swap_data = 0,
-    };
+    // scr_interface_spi_config_t spi_lcd_cfg = {
+    //     .spi_bus = spi_bus,
+    //     .pin_num_cs = 5,
+    //     .pin_num_dc = 19,
+    //     .clk_freq = 80000000,
+    //     .swap_data = 0,
+    // };
 
-    scr_interface_driver_t *iface_drv;
-    scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
+    // scr_interface_driver_t *iface_drv;
+    // scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
+
+void init_rgb_screen(scr_driver_t *lcd);
+    init_rgb_screen(&g_lcd);
 
     scr_controller_config_t lcd_cfg = {
-        .iface_drv = iface_drv,
-        .pin_num_rst = 18,
-        .pin_num_bckl = 23,
+        .interface_drv = 0,
+        .pin_num_rst = 0,
+        .pin_num_bckl = 0,
         .rst_active_level = 0,
         .bckl_active_level = 1,
-        .offset_hor=0,
-        .offset_ver=0,
-        .width = 240,
-        .height = 320,
-        .rotate = SCR_DIR_TBLR,
+        .offset_hor = 0,
+        .offset_ver = 0,
+        .width = 480,
+        .height = 854,
+        .rotate = SCR_SWAP_XY | SCR_MIRROR_Y, /** equal to SCR_DIR_BTLR */
     };
-    scr_init(SCREEN_CONTROLLER_ILI9341, &lcd_cfg, &g_lcd);
+    ret = g_lcd.init(&lcd_cfg);
 
     screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
     screen_clear(COLOR_BLUE);vTaskDelay(500 / portTICK_PERIOD_MS);
