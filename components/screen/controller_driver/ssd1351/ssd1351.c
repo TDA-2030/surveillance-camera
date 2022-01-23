@@ -105,7 +105,7 @@ esp_err_t lcd_ssd1351_init(const scr_controller_config_t *lcd_conf)
 
     // Reset the display
     if (lcd_conf->pin_num_rst >= 0) {
-        gpio_pad_select_gpio(lcd_conf->pin_num_rst);
+        esp_rom_gpio_pad_select_gpio(lcd_conf->pin_num_rst);
         gpio_set_direction(lcd_conf->pin_num_rst, GPIO_MODE_OUTPUT);
         gpio_set_level(lcd_conf->pin_num_rst, (lcd_conf->rst_active_level) & 0x1);
         vTaskDelay(100 / portTICK_RATE_MS);
@@ -155,7 +155,7 @@ esp_err_t lcd_ssd1351_init(const scr_controller_config_t *lcd_conf)
 
     // Enable backlight
     if (lcd_conf->pin_num_bckl >= 0) {
-        gpio_pad_select_gpio(lcd_conf->pin_num_bckl);
+        esp_rom_gpio_pad_select_gpio(lcd_conf->pin_num_bckl);
         gpio_set_direction(lcd_conf->pin_num_bckl, GPIO_MODE_OUTPUT);
         gpio_set_level(lcd_conf->pin_num_bckl, (lcd_conf->bckl_active_level) & 0x1);
     }

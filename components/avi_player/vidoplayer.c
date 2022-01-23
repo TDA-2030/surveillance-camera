@@ -34,7 +34,7 @@ static void audio_init(void)
 {
     pwm_audio_config_t pac;
     pac.duty_resolution    = LEDC_TIMER_10_BIT;
-    pac.gpio_num_left      = 25;
+    pac.gpio_num_left      = 16;
     pac.ledc_channel_left  = LEDC_CHANNEL_0;
     pac.gpio_num_right     = -1;
     pac.ledc_channel_right = LEDC_CHANNEL_1;
@@ -67,7 +67,6 @@ static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t length, uint32_
     return head.size;
 }
 
-#include "esp_camera.h"
 #include "screen_driver.h"
 extern scr_driver_t g_lcd;
 
@@ -88,6 +87,8 @@ static void video_task(void *args)
     }
     vTaskDelete(NULL);
 }
+
+uint32_t *_rgb_get_fb(void);
 
 void avi_play(const char *filename)
 {
@@ -125,7 +126,8 @@ void avi_play(const char *filename)
 
     uint16_t img_width = AVI_file.vids_width;
     uint16_t img_height = AVI_file.vids_height;
-    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*2, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
+    // uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*2, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
+    uint8_t *img_rgb888=_rgb_get_fb();
     if (NULL == img_rgb888)
     {
         ESP_LOGE(TAG, "malloc for rgb888 failed");
@@ -148,7 +150,7 @@ void avi_play(const char *filename)
             // jpg2rgb565((const uint8_t *)pbuffer, Strsize, img_rgb888, JPG_SCALE_NONE);
             ESP_LOGI(TAG, "jpg decode %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
     
-            g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
+            // g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
             // ESP_LOGI(TAG, "draw %ums", (uint32_t)((esp_timer_get_time() - fr_end) / 1000));fr_end = esp_timer_get_time();
 
         }//显示帧

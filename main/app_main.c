@@ -34,13 +34,9 @@
 #include "app_sntp.h"
 #include "app_camera.h"
 #include "captive_portal.h"
-#include "app_httpd.h"
-#include "esp_camera.h"
-#include "app_led.h"
 #include "screen_driver.h"
 #include "file_manage.h"
 #include "file_server.h"
-#include "avi_recorder.h"
 #include "vidoplayer.h"
 
 static const char *TAG = "app_main";
@@ -50,7 +46,6 @@ static const char *TAG = "app_main";
         return (ret);                                                                   \
         }
 
-static TaskHandle_t task_handle_onenet;
 static TaskHandle_t task_handle_misc;
 static TaskHandle_t task_handle_camera;
 
@@ -148,167 +143,11 @@ void init_rgb_screen(scr_driver_t *lcd);
         .height = 854,
         .rotate = SCR_SWAP_XY | SCR_MIRROR_Y, /** equal to SCR_DIR_BTLR */
     };
-    ret = g_lcd.init(&lcd_cfg);
+    esp_err_t ret = g_lcd.init(&lcd_cfg);
 
     screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
     screen_clear(COLOR_BLUE);vTaskDelay(500 / portTICK_PERIOD_MS);
     screen_clear(COLOR_RED);vTaskDelay(500 / portTICK_PERIOD_MS);
-}
-
-
-static void camera_task(void *arg)
-{
-    uint8_t image_cnt = 0;
-    camera_fb_t *image_fb = NULL;
-
-    
-    int res = 0;
-    sensor_t *s = esp_camera_sensor_get();
-    res = s->set_framesize(s, FRAMESIZE_HQVGA);
-    // res |= s->set_vflip(s, true);
-    // res |= s->set_hmirror(s, true);
-    if (res)
-    {
-        ESP_LOGE(TAG, "Camera set_framesize failed");
-    }
-
-    uint16_t img_width = resolution[FRAMESIZE_HQVGA].width;
-    uint16_t img_height = resolution[FRAMESIZE_HQVGA].height;
-    uint8_t *img_rgb888 = heap_caps_malloc(img_width*img_height*2, MALLOC_CAP_8BIT|MALLOC_CAP_INTERNAL);
-    if (NULL == img_rgb888)
-    {
-        ESP_LOGE(TAG, "malloc for rgb888 failed");
-    }
-    
-    while (1)
-    {
-        int64_t fr_start = esp_timer_get_time();
-        image_fb = esp_camera_fb_get();
-        if (!image_fb)
-        {
-            ESP_LOGE(TAG, "Camera capture failed");
-            vTaskDelay(5000 / portTICK_PERIOD_MS);
-            continue;
-        }
-        if (image_fb->format == PIXFORMAT_JPEG)
-        {
-            if (ONENET_NET_STATUS_CONNECT_PLATFORM == onenet_info.status)
-            {
-                if (++image_cnt > 1)
-                {
-                    image_cnt = 0;
-                    ESP_LOGI(TAG, "send image to onenet");
-                    OneNET_Send_BinFile("image", (const uint8_t *)image_fb->buf, image_fb->len);
-                }
-            }
-            
-            jpg2rgb565((const uint8_t *)image_fb->buf, image_fb->len, img_rgb888, JPG_SCALE_NONE);
-
-            char strftime_buf[64];
-            struct tm timeinfo;
-            app_sntp_get_time(&timeinfo);
-            strftime(strftime_buf, sizeof(strftime_buf), "%y-%m-%d_%H-%M-%S.jpg", &timeinfo);
-            // image_save(image_fb->buf, image_fb->len,strftime_buf);
-            g_lcd.draw_bitmap(0, 0, img_width, img_height, img_rgb888);
-            // screen_clear(COLOR_ESP_BKGD);vTaskDelay(500 / portTICK_PERIOD_MS);
-            // screen_clear(COLOR_BLUE);
-            
-        }
-        
-        ESP_LOGI(TAG, "JPG: %fKB %ums", ((float)image_fb->len/1024), (uint32_t)((esp_timer_get_time() - fr_start) / 1000));
-        esp_camera_fb_return(image_fb);
-
-        // vTaskDelay(500 / portTICK_PERIOD_MS);
-    }
-}
-
-
-static void onenet_task(void *arg)
-{
-    uint16_t i = 0, step = 0;
-
-    while (1)
-    {
-        OneNET_RevPro();
-        
-        switch (step)
-        {
-        case 0:
-        {
-            onenet_info.status = ONENET_NET_STATUS_CONNECT_NONE;
-            ESP_LOGI(TAG, "OneNET_GetLinkIP");
-            OneNET_GetLinkIP(onenet_info.protocol, onenet_info.ip, onenet_info.port);  //尝试获取所使用协议的IP和端口
-            ESP_LOGI(TAG, "OneNET_DevConnect");
-            OneNET_DevConnect(onenet_info.dev_id, onenet_info.pro_id, onenet_info.auif);
-            step = 1;
-        } break;
-        case 1:
-        {
-            ESP_LOGI(TAG, "WAIT ONENET_NET_STATUS_CONNECT_PLATFORM");
-            if (ONENET_NET_STATUS_CONNECT_PLATFORM == onenet_info.status)
-            {
-                ESP_LOGI(TAG, "ONENET_NET_STATUS_CONNECT_PLATFORM");
-                step = 2;
-                break;
-            }
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
-        }break;
-        case 2:
-        {
-            if (!SYS_STATUS_GET(SYS_STATUS_CONNECTED))
-            {
-                ESP_LOGI(TAG, "APPWIFI_DISCONNECTED_BIT");
-                step = 0;
-                onenet_info.status = ONENET_NET_STATUS_CONNECT_NONE;
-                break;
-            }
-
-            if (ONENET_NET_STATUS_CONNECT_PLATFORM == onenet_info.status)
-            {
-                if (++i > 300)
-                {
-                    i = 0;
-                    if (0 != OneNET_SendData_Heart())
-                    {
-
-                    }
-                }
-            }
-            // ESP_LOGI(TAG, "Free heap: %u", xPortGetFreeHeapSize());
-            // ESP_LOGI(TAG, "number of tasks: %u", uxTaskGetNumberOfTasks());
-            // ESP_LOGI(TAG, "misc_task high Stack: %u", uxTaskGetStackHighWaterMark(task_handle_misc));
-            // ESP_LOGI(TAG, "onenet_task high Stack: %u", uxTaskGetStackHighWaterMark(task_handle_onenet));
-
-            vTaskDelay(300 / portTICK_PERIOD_MS);
-        } break;
-        default:
-            break;
-        }
-
-    }
-}
-
-static void misc_task(void *arg)
-{
-    led_flash_set(1);
-    while (1)
-    {
-        if(SYS_STATUS_GET(SYS_STATUS_CONNECTED))
-        {
-            if(ONENET_NET_STATUS_CONNECT_PLATFORM == onenet_info.status)
-            {
-                led_flash_set(3);
-            }else
-            {
-                led_flash_set(2);
-            }
-        }else
-        {
-            led_flash_set(1);
-        }
-        
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-    }
 }
 
 void app_main()
@@ -321,7 +160,6 @@ void app_main()
     }
     ESP_ERROR_CHECK(ret);
 
-    led_init();
     // app_camera_init();
     ESP_ERROR_CHECK(fm_init()); /* Initialize file storage */
     fm_mkdir("/sdcard/picture");
@@ -343,36 +181,12 @@ void app_main()
     // start_file_server();
 
     // vTaskDelay(pdMS_TO_TICKS(1000));
-    avi_play("/sdcard/tom-240.avi");
+    avi_play("/sdcard/tom-480x800.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/taylor.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/Marshmello.avi");
-    // avi_recorder_start("/sdcard/recorde.avi", FRAMESIZE_HVGA, 60*1);
-
-    // xTaskCreate(camera_task,
-    //             "camera_task",
-    //             4096,
-    //             NULL,
-    //             7,
-    //             &task_handle_camera
-    //            );
-    // xTaskCreate(misc_task,
-    //             "misc_task",
-    //             4096,
-    //             NULL,
-    //             6,
-    //             &task_handle_misc
-    //            );
-    // xTaskCreate(onenet_task,
-    //             "onenet_task",
-    //             4096,
-    //             NULL,
-    //             5,
-    //             &task_handle_onenet
-    //            );
-
-    //app_httpd_main();
+ 
 }
 
 

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #include "sdkconfig.h"
-#if CONFIG_IDF_TARGET_ESP32S3
+#if 0
 
 #include <stdio.h>
 #include <string.h>

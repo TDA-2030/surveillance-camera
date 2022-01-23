@@ -54,7 +54,7 @@
 // #define TEST_LCD_DATA15_GPIO   (18) // R4
 // #define TEST_LCD_DISP_EN_GPIO  (-1)
 
-#define TEST_LCD_H_RES         (480)
+#define TEST_LCD_H_RES         (800)
 #define TEST_LCD_V_RES         (480)
 #define TEST_LCD_VSYNC_GPIO    (3)
 #define TEST_LCD_HSYNC_GPIO    (46)
@@ -114,11 +114,11 @@ static esp_err_t _init(const scr_controller_config_t *lcd_conf)
             TEST_LCD_DATA15_GPIO,
         },
         .timings = {
-            .pclk_hz = 13000000,
+            .pclk_hz = 10000000,
             .h_res = TEST_LCD_H_RES,
             .v_res = TEST_LCD_V_RES,
-            .hsync_back_porch = 88,
-            .hsync_front_porch = 40,
+            .hsync_back_porch = 20,
+            .hsync_front_porch = 20,
             .hsync_pulse_width = 48,
             .vsync_back_porch = 32,
             .vsync_front_porch = 13,
@@ -164,7 +164,7 @@ static esp_err_t _draw_pixel(uint16_t x, uint16_t y, uint16_t color)
 static esp_err_t _draw_bitmap(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t *bitmap)
 {
     // rgb_panel_wait_transaction_done(panel_handle, portMAX_DELAY);
-    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w-1, y + h-1, bitmap);
+    esp_lcd_panel_draw_bitmap(panel_handle, x, y, x + w, y + h, bitmap);
     return ESP_OK;
 }
 
@@ -191,5 +191,12 @@ void init_rgb_screen(scr_driver_t *lcd)
     lcd->write_ram_data  =_write_ram_data;
     
 }
+
+uint32_t *_rgb_get_fb(void)
+{
+    uint32_t *rgb_panel_get_fb(esp_lcd_panel_handle_t panel);
+    return rgb_panel_get_fb(panel_handle);
+}
+
 
 #endif // SOC_LCD_RGB_SUPPORTED

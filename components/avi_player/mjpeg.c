@@ -170,7 +170,7 @@ void mjpegdraw(uint8_t *mjpegbuffer, uint32_t size, uint8_t *outbuffer)
   /* This struct contains the JPEG decompression parameters and pointers to
    * working space (which is allocated as needed by the JPEG library).
    */
-  struct jpeg_decompress_struct cinfo;
+  struct jpeg_decompress_struct cinfo={0};
   /* We use our private extension JPEG error handler.
    * Note that this struct must live as long as the main JPEG parameter
    * struct, to avoid dangling-pointer problems.
@@ -224,6 +224,7 @@ void mjpegdraw(uint8_t *mjpegbuffer, uint32_t size, uint8_t *outbuffer)
    * jpeg_read_header(), so we do nothing here.
    */
   cinfo.dct_method = JDCT_IFAST;
+  cinfo.dither_mode = JDITHER_NONE;
 	cinfo.do_fancy_upsampling = 0; 
   cinfo.out_color_space=JCS_RGB;
   /* Step 5: Start decompressor */
@@ -265,7 +266,7 @@ void mjpegdraw(uint8_t *mjpegbuffer, uint32_t size, uint8_t *outbuffer)
     for(index = 0; index < cinfo.output_width; index++)
     {
       uint16_t c = ((*color) >> 3)<<11 | ((*(color+1))>> 2) << 5 | (*(color+2)) >> 3;
-      out[index] = c>>8 | c<<8;
+      out[index] = c;//c>>8 | c<<8;
       color+=3;
     }
       // g_lcd.draw_bitmap(0, y, 240, 1, g_line_buffer);

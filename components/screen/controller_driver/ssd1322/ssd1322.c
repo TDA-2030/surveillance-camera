@@ -93,7 +93,7 @@ esp_err_t lcd_ssd1322_init(const scr_controller_config_t *lcd_conf)
     LCD_CHECK(lcd_conf->height <= SSD1322_HEIGHT, "Height greater than maximum", ESP_ERR_INVALID_ARG);
     // Reset the display
     if (lcd_conf->pin_num_rst >= 0) {
-        gpio_pad_select_gpio(lcd_conf->pin_num_rst);
+        esp_rom_gpio_pad_select_gpio(lcd_conf->pin_num_rst);
         gpio_set_direction(lcd_conf->pin_num_rst, GPIO_MODE_OUTPUT);
         gpio_set_level(lcd_conf->pin_num_rst, (lcd_conf->rst_active_level) & 0x1);
         vTaskDelay(100 / portTICK_RATE_MS);

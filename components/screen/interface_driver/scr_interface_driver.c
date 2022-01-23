@@ -172,7 +172,7 @@ static esp_err_t spi_lcd_driver_init(const scr_interface_spi_config_t *cfg, inte
     LCD_IFACE_CHECK(GPIO_IS_VALID_OUTPUT_GPIO(cfg->pin_num_dc), "gpio dc invalid", ESP_ERR_INVALID_ARG);
 
     //Initialize non-SPI GPIOs
-    gpio_pad_select_gpio(cfg->pin_num_dc);
+    esp_rom_gpio_pad_select_gpio(cfg->pin_num_dc);
     gpio_set_direction(cfg->pin_num_dc, GPIO_MODE_OUTPUT);
     out_interface_spi->pin_num_dc = cfg->pin_num_dc;
     out_interface_spi->swap_data = cfg->swap_data;

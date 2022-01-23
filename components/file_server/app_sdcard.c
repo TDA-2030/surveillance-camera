@@ -51,17 +51,24 @@ esp_err_t app_sdcard_init(void)
     // Modify slot_config.gpio_cd and slot_config.gpio_wp if your board has these signals.
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
 
-    // To use 1-line SD mode, uncomment the following line:
-    // slot_config.width = 1;
+    // To use 1-line SD mode, change this to 1:
+    slot_config.width = 1;
 
-    // GPIOs 15, 2, 4, 12, 13 should have external 10k pull-ups.
-    // Internal pull-ups are not sufficient. However, enabling internal pull-ups
-    // does make a difference some boards, so we do that here.
-    gpio_set_pull_mode(15, GPIO_PULLUP_ONLY);   // CMD, needed in 4- and 1- line modes
-    gpio_set_pull_mode(2, GPIO_PULLUP_ONLY);    // D0, needed in 4- and 1-line modes
-    gpio_set_pull_mode(4, GPIO_PULLUP_ONLY);    // D1, needed in 4-line mode only
-    gpio_set_pull_mode(12, GPIO_PULLUP_ONLY);   // D2, needed in 4-line mode only
-    gpio_set_pull_mode(13, GPIO_PULLUP_ONLY);   // D3, needed in 4- and 1-line modes
+    // On chips where the GPIOs used for SD card can be configured, set them in
+    // the slot_config structure:
+#ifdef SOC_SDMMC_USE_GPIO_MATRIX
+    slot_config.clk = GPIO_NUM_6;
+    slot_config.cmd = GPIO_NUM_7;
+    slot_config.d0 = GPIO_NUM_5;
+    // slot_config.d1 = GPIO_NUM_4;
+    // slot_config.d2 = GPIO_NUM_12;
+    // slot_config.d3 = GPIO_NUM_13;
+#endif
+
+    // Enable internal pullups on enabled pins. The internal pullups
+    // are insufficient however, please make sure 10k external pullups are
+    // connected on the bus. This is for debug / example purpose only.
+    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
 
 #else
     ESP_LOGI(TAG, "Using SPI peripheral");
@@ -82,7 +89,7 @@ esp_err_t app_sdcard_init(void)
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = true,
         .max_files = 5,
-        .allocation_unit_size = 16 * 1024
+        // .allocation_unit_size = 16 * 1024
     };
 
     // Use settings defined above to initialize SD card and mount FAT filesystem.
