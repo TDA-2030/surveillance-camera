@@ -38,6 +38,7 @@
 #include "file_manage.h"
 #include "file_server.h"
 #include "vidoplayer.h"
+#include "rgb.h"
 
 static const char *TAG = "app_main";
 
@@ -108,6 +109,8 @@ static void screen_clear(int color)
 
 static void lcd_init(void)
 {
+    void h4001_init();
+    h4001_init();
     // spi_config_t spi_cfg = {
     //     .miso_io_num = -1,
     //     .mosi_io_num = 21, //txd
@@ -128,7 +131,6 @@ static void lcd_init(void)
     // scr_interface_driver_t *iface_drv;
     // scr_interface_create(SCREEN_IFACE_SPI, &spi_lcd_cfg, &iface_drv);
 
-void init_rgb_screen(scr_driver_t *lcd);
     init_rgb_screen(&g_lcd);
 
     scr_controller_config_t lcd_cfg = {
@@ -181,7 +183,7 @@ void app_main()
     // start_file_server();
 
     // vTaskDelay(pdMS_TO_TICKS(1000));
-    avi_play("/sdcard/tom-480x800.avi");
+    avi_play("/sdcard/tom-480x480.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));
     // avi_play("/sdcard/taylor.avi");
     // vTaskDelay(pdMS_TO_TICKS(1000));

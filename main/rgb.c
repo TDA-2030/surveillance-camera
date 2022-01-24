@@ -54,7 +54,7 @@
 // #define TEST_LCD_DATA15_GPIO   (18) // R4
 // #define TEST_LCD_DISP_EN_GPIO  (-1)
 
-#define TEST_LCD_H_RES         (800)
+#define TEST_LCD_H_RES         (480)
 #define TEST_LCD_V_RES         (480)
 #define TEST_LCD_VSYNC_GPIO    (3)
 #define TEST_LCD_HSYNC_GPIO    (46)
@@ -192,9 +192,8 @@ void init_rgb_screen(scr_driver_t *lcd)
     
 }
 
-uint32_t *_rgb_get_fb(void)
+uint8_t *_rgb_get_fb(void)
 {
-    uint32_t *rgb_panel_get_fb(esp_lcd_panel_handle_t panel);
     return rgb_panel_get_fb(panel_handle);
 }
 

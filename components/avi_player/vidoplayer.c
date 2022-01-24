@@ -59,7 +59,7 @@ static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t length, uint32_
         head.size++;    //奇数加1
     }
     if (length < head.size) {
-        ESP_LOGE(TAG, "frame size too large");
+        ESP_LOGE(TAG, "frame size too large [%d]", head.size);
         return 0;
     }
     
@@ -68,6 +68,7 @@ static uint32_t read_frame(FILE *file, uint8_t *buffer, uint32_t length, uint32_
 }
 
 #include "screen_driver.h"
+#include "/home/zhouli/esp/esp-idf/master/examples/screen/surveillance-camera/main/rgb.h"
 extern scr_driver_t g_lcd;
 
 static void audio_task(void *args)
@@ -88,7 +89,6 @@ static void video_task(void *args)
     vTaskDelete(NULL);
 }
 
-uint32_t *_rgb_get_fb(void);
 
 void avi_play(const char *filename)
 {
@@ -98,7 +98,7 @@ void avi_play(const char *filename)
     uint32_t  Strsize;
     uint32_t  Strtype;
     uint8_t *pbuffer;
-    uint32_t buffer_size = 22*1024;
+    uint32_t buffer_size = 40*1024;
 
     avi_file = fopen(filename, "rb");
     if (avi_file == NULL) {
